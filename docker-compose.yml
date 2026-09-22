@@ -1,0 +1,21 @@
+services:
+  mt5-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mt5-2pa-agent:latest
+    container_name: mt5-2pa-agent
+    restart: unless-stopped
+    ports:
+      # 左边是宿主机端口（MT5 EA 的 BridgeUrl 要指向 宿主机IP:此端口）
+      # 右边是容器端口，与 ENTRYPOINT 的 --port 一致
+      - "8066:8066"
+    environment:
+      - TZ=Asia/Shanghai
+      - RUST_LOG=info
+    volumes:
+      # 配置与环境变量持久化（.env 包含 LLM 密钥，不要提交到 Git）
+      - ./.env:/app/.env
+      - ./config:/app/config
+      # 决策记录与交易审计持久化（含 trade_audit.jsonl）
+      - ./records:/app/records
