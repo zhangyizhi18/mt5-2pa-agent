@@ -1,0 +1,2183 @@
+const $ = (id) => document.getElementById(id);
+
+let candles = [];
+let equityPoints = [];
+let equityRange = "24h"; // 1h | 24h | 7d | 30d | all | custom
+let statusData = {};
+let instrumentOptions = [];
+let visibleInstrumentValues = [];
+let highlightedInstrumentIndex = -1;
+let decisionRecords = [];
+let tradeRecords = [];
+let sessionPresetOptions = [];
+let sessionDirty = false;
+let currentTradingSystem = "2pa";
+
+// ==================== 账号与角色 ====================
+let currentUser = null; // { username, role: "admin" | "readonly" }
+const isAdmin = () => currentUser?.role === "admin";
+try {
+  const savedSys = localStorage.getItem("mt5_trading_system");
+  if (savedSys === "dog_walking" || savedSys === "2pa") {
+    currentTradingSystem = savedSys;
+  }
+} catch {}
+
+// 恢复上次选择的交易周期（未保存过时保持 HTML 默认值）
+try {
+  const savedTf = localStorage.getItem("mt5_timeframe");
+  const tfSelect = document.getElementById("timeframe");
+  if (savedTf && tfSelect && [...tfSelect.options].some((o) => o.text === savedTf)) {
+    tfSelect.value = savedTf;
+  }
+} catch {}
+
+function rememberTimeframe() {
+  try {
+    const tf = document.getElementById("timeframe")?.value;
+    if (tf) localStorage.setItem("mt5_timeframe", tf);
+  } catch {}
+}
+
+function computeSMA(bars, period) {
+  const result = new Array(bars.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < bars.length; i++) {
+    sum += bars[i].close;
+    if (i >= period) {
+      sum -= bars[i - period].close;
+    }
+    if (i >= period - 1) {
+      result[i] = sum / period;
+    } else if (bars.length < period && i >= 3) {
+      result[i] = sum / (i + 1);
+    }
+  }
+  return result;
+}
+
+function computeEMA(bars, period) {
+  const result = new Array(bars.length).fill(null);
+  if (bars.length < period) return result;
+  const k = 2 / (period + 1);
+  let seed = 0;
+  for (let i = 0; i < period; i++) seed += bars[i].close;
+  let prev = seed / period;
+  result[period - 1] = prev;
+  for (let i = period; i < bars.length; i++) {
+    prev = bars[i].close * k + prev * (1 - k);
+    result[i] = prev;
+  }
+  return result;
+}
+
+const mt5GroupRules = [
+  { label: "贵金属", test: /^(XAU|XAG|XPT|XPD)/ },
+  { label: "外汇", test: /^(EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY|USDCNH|USDCNY)/ },
+  { label: "加密货币", test: /(BTC|ETH|SOL|XRP|DOGE|LTC|BCH|BNB|ADA)/ },
+  { label: "指数", test: /(US30|NAS100|SPX500|GER40|UK100|JP225|HK50|DJI|NDX|DX)/ },
+  { label: "能源", test: /(OIL|GAS|WTI|BRENT|NGAS)/ },
+  { label: "美股个股", test: /(AAPL|TSLA|NVDA|MSFT|AMZN|META|GOOGL|AMD|NFLX)/ },
+];
+
+function mt5GroupName(symbol, description) {
+  const hit = mt5GroupRules.find((rule) => rule.test.test(symbol));
+  if (hit) return hit.label;
+  if (description) {
+    const descHit = mt5GroupRules.find((rule) => rule.test.test(description.toUpperCase()));
+    if (descHit) return descHit.label;
+  }
+  return "其他品种";
+}
+
+const fmt = (value, digits = 8) => {
+  if (value === null || value === undefined || value === "") return "—";
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });
+};
+
+const fmtMoney = (value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const escapeHtml = (value) => String(value ?? "")
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
+
+function toast(message) {
+  const element = $("toast");
+  element.textContent = message;
+  element.classList.add("show");
+  setTimeout(() => element.classList.remove("show"), 2600);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const body = await response.json().catch(() => ({}));
+  // 会话失效：任何业务接口返回 401 都弹回登录页（auth 接口自身除外，避免循环）
+  if (response.status === 401 && !path.startsWith("/api/auth/")) {
+    showLoginOverlay();
+  }
+  if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+  return body;
+}
+
+function showLoginOverlay() {
+  currentUser = null;
+  const overlay = $("loginOverlay");
+  if (overlay) {
+    overlay.hidden = false;
+    $("loginPassword").value = "";
+    $("loginError").hidden = true;
+    $("loginUsername").focus();
+  }
+  applyRoleUI();
+}
+
+function hideLoginOverlay() {
+  $("loginOverlay").hidden = true;
+}
+
+function setSessionWeekdays(weekdays) {
+  const selected = new Set((weekdays || []).map(Number));
+  document.querySelectorAll(".session-weekday").forEach((input) => {
+    input.checked = selected.has(Number(input.value));
+  });
+}
+
+function selectedSessionWeekdays() {
+  return [...document.querySelectorAll(".session-weekday:checked")].map((input) => Number(input.value));
+}
+
+const defaultSessionPresets = [
+  { key: "always", label: "全天候", timezone: "UTC", start: "00:00", end: "00:00", weekdays: [0,1,2,3,4,5,6], description: "全天运行，适合 7×24 小时市场" },
+  { key: "us_regular", label: "美股常规盘", timezone: "America/New_York", start: "09:30", end: "16:00", weekdays: [0,1,2,3,4], description: "周一至周五，美东时间 09:30-16:00" },
+  { key: "us_open", label: "美股开盘窗口", timezone: "America/New_York", start: "09:30", end: "11:30", weekdays: [0,1,2,3,4], description: "周一至周五，美东时间开盘后两小时" },
+  { key: "london", label: "伦敦时段", timezone: "Europe/London", start: "08:00", end: "16:30", weekdays: [0,1,2,3,4], description: "周一至周五，伦敦当地时间 08:00-16:30" },
+  { key: "asia", label: "亚洲时段", timezone: "Asia/Shanghai", start: "09:00", end: "16:00", weekdays: [0,1,2,3,4], description: "周一至周五，北京时间 09:00-16:00" },
+];
+
+function populateSessionPresets(options) {
+  const opts = Array.isArray(options) && options.length ? options : defaultSessionPresets;
+  sessionPresetOptions = opts;
+  const select = $("sessionPreset");
+  if (select.dataset.loaded === "true") return;
+  select.replaceChildren();
+  [...opts, { key: "custom", label: "自定义" }].forEach((option) => {
+    const element = document.createElement("option");
+    element.value = option.key;
+    element.textContent = option.label;
+    select.appendChild(element);
+  });
+  select.dataset.loaded = "true";
+  select.disabled = false;
+}
+
+function formatNextSessionOpen(value, timezoneName) {
+  if (!value) return "下次开放时间：持续开放";
+  try {
+    const formatted = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: timezoneName,
+      month: "2-digit",
+      day: "2-digit",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(value));
+    return `下次开放时间：${formatted} (${timezoneName})`;
+  } catch (_error) {
+    return `下次开放时间：${value}`;
+  }
+}
+
+function renderAutomationSession(state, forceControls = false) {
+  populateSessionPresets(state.automation_session_presets);
+  const session = state.automation_session || {};
+  const enabled = Boolean(state.auto_trading_enabled);
+  const activeElement = $("sessionActive");
+  activeElement.textContent = !enabled ? "自动交易关闭" : session.active ? "时段内" : "时段外暂停";
+  activeElement.classList.toggle("paused", !enabled || !session.active);
+  $("sessionDescription").textContent = session.description || "—";
+  $("sessionNextOpen").textContent = formatNextSessionOpen(session.next_open_at, session.timezone || "UTC");
+  if (sessionDirty && !forceControls) return;
+  $("sessionPreset").value = session.preset || "always";
+  $("sessionTimezone").value = session.timezone || "UTC";
+  $("sessionStart").value = session.start || "00:00";
+  $("sessionEnd").value = session.end || "00:00";
+  setSessionWeekdays(session.weekdays || []);
+  $("customSessionFields").hidden = session.preset !== "custom";
+}
+
+function automationRequestBody(enabled) {
+  return {
+    enabled,
+    inst_id: $("symbol").value.trim(),
+    timeframe: $("timeframe").value,
+    confirmation: $("confirmation").value,
+    session_preset: $("sessionPreset").value,
+    session_timezone: $("sessionTimezone").value.trim(),
+    session_start: $("sessionStart").value,
+    session_end: $("sessionEnd").value,
+    session_weekdays: selectedSessionWeekdays(),
+    trading_system: currentTradingSystem || $("tradingSystemSelect")?.value || "2pa",
+  };
+}
+
+function renderAutomationStatus(state, forceSessionControls = false) {
+  const enabled = Boolean(state.auto_trading_enabled);
+  const switchElement = $("automationSwitch");
+  if (switchElement) switchElement.checked = enabled;
+  const statusElement = $("automationStatus");
+  if (statusElement) statusElement.textContent = enabled ? "运行中" : "已关闭";
+  const messageElement = $("automationMessage");
+  if (messageElement) {
+    if (!enabled) messageElement.textContent = "自动交易未启用";
+    else if (!state.automation_session?.active) messageElement.textContent = "自动交易已启用，当前不在分析时段，已暂停分析与交易";
+    else if (state.can_execute) messageElement.textContent = "自动分析与执行已生效";
+    else messageElement.textContent = "已启用，但执行条件未全部满足";
+  }
+  const autoSystem = $("autoSystem");
+  if (autoSystem) {
+    const sys = state.trading_system || currentTradingSystem;
+    autoSystem.innerHTML = sys === "dog_walking"
+      ? `<span style="color:var(--amber);font-weight:700">🐕 遛狗系统 (SMA 14/170)</span>`
+      : (sys === "adaptive"
+          ? `<span style="color:#a855f7;font-weight:700">🧠 智能自适应双引擎</span>`
+          : `<span style="color:var(--green);font-weight:700">2PA 价格行为</span>`);
+  }
+  const autoTimeframe = $("autoTimeframe");
+  if (autoTimeframe) autoTimeframe.textContent = `${state.timeframe || "—"}（后台实际值）`;
+  renderAutomationSession(state, forceSessionControls);
+}
+
+function updateSystemUI() {
+  if ($("tradingSystemSelect")) {
+    $("tradingSystemSelect").value = currentTradingSystem || "2pa";
+  }
+  const autoSystem = $("autoSystem");
+  if (autoSystem) {
+    autoSystem.innerHTML = currentTradingSystem === "dog_walking"
+      ? `<span style="color:var(--amber);font-weight:700">🐕 遛狗系统 (SMA 14/170)</span>`
+      : (currentTradingSystem === "adaptive"
+          ? `<span style="color:#a855f7;font-weight:700">🧠 智能自适应双引擎</span>`
+          : `<span style="color:var(--green);font-weight:700">2PA 价格行为</span>`);
+  }
+}
+
+async function loadStatus() {
+  statusData = await api("/api/status");
+  const modeBadge = $("modeBadge");
+  if (modeBadge) {
+    const modeText = statusData.mode === "demo" ? "模拟交易" : statusData.mode === "live" ? "实盘交易" : "等待桥接";
+    modeBadge.textContent = modeText;
+    modeBadge.className = `badge ${statusData.mode === "unknown" ? "muted" : statusData.mode}`;
+  }
+  const credentialBadge = $("credentialBadge");
+  if (credentialBadge) {
+    credentialBadge.textContent = statusData.bridge_connected ? "MT5 桥接已连接" : "MT5 桥接未连接";
+    credentialBadge.className = `badge ${statusData.bridge_connected ? "good" : "muted"}`;
+  }
+  const brokerTagElement = $("brokerTag");
+  if (brokerTagElement) brokerTagElement.textContent = statusData.broker_tag;
+  renderAutomationStatus(statusData);
+  const autoSymbol = $("autoSymbol");
+  if (autoSymbol) {
+    autoSymbol.innerHTML = `<span style="color:var(--green)">${escapeHtml(statusData.symbol || "—")} (MT5)</span>`;
+  }
+  const riskConfidence = $("riskConfidence");
+  if (riskConfidence) riskConfidence.textContent = `${statusData.confidence_threshold}%`;
+  const orderSize = $("orderSize");
+  if (orderSize) {
+    if (statusData.auto_order_sizing) {
+      orderSize.innerHTML = `<span style="color:var(--green);font-weight:700">动态自适应算量</span> <small>(风控 ${statusData.risk_percent || 2}% / 顶格 ${statusData.max_margin_percent || 25}%)</small>`;
+    } else {
+      orderSize.textContent = `${statusData.default_order_size} 手`;
+    }
+  }
+  const tradeMode = $("tradeMode");
+  if (tradeMode) {
+    const acct = statusData.bridge?.account || {};
+    tradeMode.textContent = acct.server
+      ? `${acct.margin_mode || "—"} / ${acct.leverage || "—"}x / ${acct.currency || ""}`
+      : "桥接未连接";
+  }
+  const confirmation = $("confirmation");
+  if (confirmation) {
+    const code = statusData.mode === "live" ? "ENABLE LIVE" : "ENABLE DEMO";
+    confirmation.placeholder = `请在此输入 ${code} 确认开启`;
+  }
+  if (statusData.trading_system) {
+    currentTradingSystem = statusData.trading_system;
+    try {
+      localStorage.setItem("mt5_trading_system", currentTradingSystem);
+    } catch {}
+    updateSystemUI();
+  }
+  updateInstTypeBadge();
+  if (statusData.latest) renderDecision(statusData.latest);
+}
+
+function updateInstTypeBadge() {
+  const badge = $("instTypeBadge");
+  if (badge) {
+    badge.textContent = "🔌 MT5 桥接 (按手数下单)";
+    badge.className = "inst-type-badge swap";
+  }
+}
+
+async function loadInstruments() {
+  instrumentOptions = [];
+  visibleInstrumentValues = [];
+  closeInstrumentMenu();
+  $("symbol").disabled = true;
+  $("symbolToggle").disabled = true;
+  try {
+    const rows = await api("/api/instruments?inst_type=ALL");
+    instrumentOptions = rows
+      .map((item) => {
+        const id = String(item.symbol || "").toUpperCase();
+        const name = String(item.description || "");
+        const group = mt5GroupName(id, name);
+        return {
+          id, group, name, marketLabel: "MT5",
+          search: `${id} ${name} ${group}`.toUpperCase(),
+        };
+      })
+      .filter((item) => item.id);
+    const groupOrder = ["贵金属", "外汇", "加密货币", "指数", "能源", "美股个股", "其他品种"];
+    instrumentOptions.sort((left, right) => {
+      const groupDifference = groupOrder.indexOf(left.group) - groupOrder.indexOf(right.group);
+      if (groupDifference) return groupDifference;
+      return left.id.localeCompare(right.id);
+    });
+
+    const current = $("symbol").value.trim().toUpperCase();
+    const available = new Set(instrumentOptions.map((item) => item.id));
+    $("symbol").value = available.has(current)
+      ? current
+      : available.has("XAUUSD") ? "XAUUSD" : String(instrumentOptions[0]?.id || "XAUUSD");
+    closeInstrumentMenu();
+  } catch (error) {
+    // 桥接未连接时保持当前输入，允许手动键入品种
+    closeInstrumentMenu();
+  } finally {
+    $("symbol").disabled = false;
+    $("symbolToggle").disabled = false;
+  }
+}
+
+function closeInstrumentMenu() {
+  $("instrumentMenu").hidden = true;
+  $("symbol").setAttribute("aria-expanded", "false");
+  highlightedInstrumentIndex = -1;
+}
+
+function renderInstrumentMenu(query = "") {
+  const normalized = query.trim().toUpperCase();
+  const matches = instrumentOptions
+    .filter((item) => !normalized || item.search.includes(normalized))
+    .slice(0, normalized ? 120 : 300);
+  visibleInstrumentValues = matches.map((item) => item.id);
+  highlightedInstrumentIndex = matches.length ? 0 : -1;
+
+  if (!matches.length) {
+    $("instrumentMenu").innerHTML = '<div class="instrument-empty">未找到匹配品种</div>';
+  } else {
+    const groups = new Map();
+    matches.forEach((item) => {
+      if (!groups.has(item.group)) groups.set(item.group, []);
+      groups.get(item.group).push(item);
+    });
+    $("instrumentMenu").innerHTML = [...groups.entries()].map(([label, items]) => `
+      <section class="instrument-menu-group">
+        <div class="instrument-menu-label">${escapeHtml(label)}</div>
+        ${items.map((item, index) => `
+          <button class="instrument-option${index === 0 && label === matches[0].group ? " active" : ""}"
+            type="button" role="option" data-value="${escapeHtml(item.id)}">
+            <strong>${escapeHtml(item.id)}</strong>
+            <small>${escapeHtml(`${item.name}${item.name ? " · " : ""}${item.marketLabel}`)}</small>
+          </button>`).join("")}
+      </section>`).join("");
+  }
+  $("instrumentMenu").hidden = false;
+  $("symbol").setAttribute("aria-expanded", "true");
+}
+
+function chooseInstrument(value) {
+  $("symbol").value = value;
+  closeInstrumentMenu();
+  loadCandles();
+}
+
+function moveInstrumentHighlight(direction) {
+  const options = [...$("instrumentMenu").querySelectorAll(".instrument-option")];
+  if (!options.length) return;
+  highlightedInstrumentIndex = (highlightedInstrumentIndex + direction + options.length) % options.length;
+  options.forEach((option, index) => option.classList.toggle("active", index === highlightedInstrumentIndex));
+  options[highlightedInstrumentIndex].scrollIntoView({ block: "nearest" });
+}
+
+async function changeInstrumentType() {
+  await loadCandles();
+}
+
+async function loadCandles() {
+  updateInstTypeBadge();
+  const symbol = $("symbol").value.trim().toUpperCase();
+  const timeframe = $("timeframe").value;
+  $("chartEmpty").style.display = "grid";
+  try {
+    candles = await api(`/api/candles?inst_id=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=300`);
+    if ($("symbol").value.trim().toUpperCase() !== symbol || $("timeframe").value !== timeframe) return;
+    candles.sort((a, b) => a.ts_open - b.ts_open);
+    const last = candles.at(-1);
+    if (last) {
+      $("lastPrice").textContent = fmt(last.close);
+      $("periodChange").textContent = `${((last.close / last.open - 1) * 100).toFixed(2)}%`;
+      $("periodChange").style.color = last.close >= last.open ? "var(--up)" : "var(--down)";
+      $("highPrice").textContent = fmt(last.high);
+      $("lowPrice").textContent = fmt(last.low);
+      $("volume").textContent = fmt(last.volume);
+    }
+    drawChart();
+  } catch (error) {
+    $("chartEmpty").textContent = error.message;
+    toast(error.message);
+  }
+}
+
+function updateSystemUI() {
+  const title = $("analysisTitle");
+  if (title) {
+    title.textContent = currentTradingSystem === "dog_walking" ? "两阶段遛狗均线回归分析" : "两阶段价格行为分析";
+  }
+  const autoSys = $("autoSystem");
+  if (autoSys) {
+    autoSys.innerHTML = currentTradingSystem === "dog_walking"
+      ? `<span style="color:var(--amber);font-weight:700">🐕 遛狗系统 (SMA 14/170)</span>`
+      : `<span style="color:var(--green);font-weight:700">2PA 价格行为</span>`;
+  }
+  const select = $("tradingSystemSelect");
+  if (select && select.value !== currentTradingSystem) {
+    select.value = currentTradingSystem;
+  }
+}
+
+function drawChart() {
+  const canvas = $("chartCanvas");
+  const wrap = $("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const width = wrap.clientWidth;
+  const height = wrap.clientHeight;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const context = canvas.getContext("2d");
+  context.scale(dpr, dpr);
+  context.clearRect(0, 0, width, height);
+  if (!candles.length) return;
+
+  $("chartEmpty").style.display = "none";
+  const padding = { left: 12, right: 68, top: 32, bottom: 26 };
+
+  // Calculate indicator arrays on the full sorted candle series
+  const sma14All = computeSMA(candles, 14);
+  const sma170All = computeSMA(candles, 170);
+  const ema20All = computeEMA(candles, 20);
+
+  const displayCount = 120;
+  const startIndex = Math.max(0, candles.length - displayCount);
+  const data = candles.slice(startIndex);
+  const sma14 = sma14All.slice(startIndex);
+  const sma170 = sma170All.slice(startIndex);
+  const ema20 = ema20All.slice(startIndex);
+
+  let high = Math.max(...data.map((item) => item.high));
+  let low = Math.min(...data.map((item) => item.low));
+
+  // Include visible indicator lines in min/max bounds so lines are never clipped
+  if (currentTradingSystem === "dog_walking") {
+    sma14.forEach((val) => { if (val != null) { high = Math.max(high, val); low = Math.min(low, val); } });
+    sma170.forEach((val) => { if (val != null) { high = Math.max(high, val); low = Math.min(low, val); } });
+  } else {
+    ema20.forEach((val) => { if (val != null) { high = Math.max(high, val); low = Math.min(low, val); } });
+  }
+
+  const range = (high - low) || 1;
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const y = (value) => padding.top + ((high - value) / range) * plotHeight;
+  const x = (index) => padding.left + (index + 0.5) * plotWidth / data.length;
+
+  // Grid lines and price axis
+  context.strokeStyle = "#202628";
+  context.fillStyle = "#7c878a";
+  context.font = "11px Segoe UI";
+  for (let index = 0; index <= 5; index += 1) {
+    const yy = padding.top + index * plotHeight / 5;
+    const value = high - index * range / 5;
+    context.beginPath();
+    context.moveTo(padding.left, yy);
+    context.lineTo(width - padding.right, yy);
+    context.stroke();
+    context.fillText(fmt(value), width - padding.right + 7, yy + 4);
+  }
+
+  // Draw Candlesticks
+  const candleWidth = Math.max(2, plotWidth / data.length * 0.62);
+  // 涨跌色只取一次：逐根 K 线调用 getComputedStyle 会明显拖慢绘制
+  const candleUp = upColor();
+  const candleDown = downColor();
+  data.forEach((bar, index) => {
+    const color = bar.close >= bar.open ? candleUp : candleDown;
+    const xx = x(index);
+    context.strokeStyle = color;
+    context.fillStyle = color;
+    context.beginPath();
+    context.moveTo(xx, y(bar.high));
+    context.lineTo(xx, y(bar.low));
+    context.stroke();
+    const top = y(Math.max(bar.open, bar.close));
+    const bodyHeight = Math.max(1, Math.abs(y(bar.open) - y(bar.close)));
+    context.fillRect(xx - candleWidth / 2, top, candleWidth, bodyHeight);
+  });
+
+  // Draw Indicator Curves & Top Legend
+  if (currentTradingSystem === "dog_walking") {
+    // 1. Draw SMA 170 (Blue Line - Owner)
+    context.save();
+    context.strokeStyle = "#38bdf8";
+    context.lineWidth = 2.2;
+    context.beginPath();
+    let started170 = false;
+    for (let i = 0; i < data.length; i++) {
+      if (sma170[i] != null) {
+        const xx = x(i);
+        const yy = y(sma170[i]);
+        if (!started170) { context.moveTo(xx, yy); started170 = true; }
+        else { context.lineTo(xx, yy); }
+      }
+    }
+    if (started170) context.stroke();
+    context.restore();
+
+    // 2. Draw SMA 14 (Orange Line - Dog Leash)
+    context.save();
+    context.strokeStyle = "#fb923c";
+    context.lineWidth = 1.8;
+    context.beginPath();
+    let started14 = false;
+    for (let i = 0; i < data.length; i++) {
+      if (sma14[i] != null) {
+        const xx = x(i);
+        const yy = y(sma14[i]);
+        if (!started14) { context.moveTo(xx, yy); started14 = true; }
+        else { context.lineTo(xx, yy); }
+      }
+    }
+    if (started14) context.stroke();
+    context.restore();
+
+    // 3. Draw Legend at Top-Left (Matching Reference Image)
+    const last14 = sma14.filter((v) => v != null).at(-1);
+    const last170 = sma170.filter((v) => v != null).at(-1);
+    context.font = "bold 12px Segoe UI, sans-serif";
+    context.fillStyle = "#cbd5e1";
+    context.fillText("双移动平均线 14 170 Simple", padding.left + 4, 18);
+    let offset = padding.left + 175;
+    if (last14 != null) {
+      context.fillStyle = "#fb923c";
+      context.fillText(fmt(last14), offset, 18);
+      offset += 75;
+    }
+    if (last170 != null) {
+      context.fillStyle = "#38bdf8";
+      context.fillText(fmt(last170), offset, 18);
+    }
+  } else {
+    // 2PA Mode: Draw EMA 20 (Cyan Line)
+    context.save();
+    context.strokeStyle = "#22d3ee";
+    context.lineWidth = 1.8;
+    context.beginPath();
+    let startedEma = false;
+    for (let i = 0; i < data.length; i++) {
+      if (ema20[i] != null) {
+        const xx = x(i);
+        const yy = y(ema20[i]);
+        if (!startedEma) { context.moveTo(xx, yy); startedEma = true; }
+        else { context.lineTo(xx, yy); }
+      }
+    }
+    if (startedEma) context.stroke();
+    context.restore();
+
+    const lastEma = ema20.filter((v) => v != null).at(-1);
+    context.font = "bold 12px Segoe UI, sans-serif";
+    context.fillStyle = "#cbd5e1";
+    context.fillText("指数移动平均线 EMA 20", padding.left + 4, 18);
+    if (lastEma != null) {
+      context.fillStyle = "#22d3ee";
+      context.fillText(fmt(lastEma), padding.left + 155, 18);
+    }
+  }
+}
+
+function renderDecision(result) {
+  const decision = result.decision || {};
+  const action = decision.action || "";
+  const orderType = decision.order_type || "";
+  let direction = decision.order_direction || "不下单";
+
+  if (action === "MOVE_STOP_LOSS" || orderType === "修改止损") {
+    direction = "🛡️ 移动止损";
+  } else if (action === "CLOSE_EARLY" || orderType === "平仓") {
+    direction = "🚪 主动平仓";
+  } else if (action === "HOLD" || orderType === "持有") {
+    direction = "💎 继续持有";
+  }
+
+  const sys = result.trading_system || result.meta?.trading_system || currentTradingSystem;
+  $("decisionDirection").textContent = direction;
+  
+  let dirClass = "neutral";
+  if (direction === "做多" || direction.includes("做多")) dirClass = "long";
+  else if (direction === "做空" || direction.includes("做空")) dirClass = "short";
+  else if (action === "MOVE_STOP_LOSS" || orderType === "修改止损") dirClass = "long";
+  else if (action === "CLOSE_EARLY" || orderType === "平仓") dirClass = "short";
+  else if (action === "HOLD" || orderType === "持有") dirClass = "long";
+  
+  $("decisionDirection").className = `direction ${dirClass}`;
+  $("confidence").textContent = `信心 ${decision.trade_confidence ?? "—"}%`;
+  $("orderType").textContent = decision.order_type || (action ? action : "—");
+  $("entryPrice").textContent = fmt(decision.entry_price);
+  
+  const stopDisplay = decision.new_stop_loss_price != null 
+    ? `${fmt(decision.new_stop_loss_price)} (新止损)` 
+    : fmt(decision.stop_loss_price);
+  $("stopPrice").textContent = stopDisplay;
+  
+  $("targetPrice").textContent = decision.take_profit_price != null ? `${fmt(decision.take_profit_price)}${sys === "dog_walking" ? " (170均线)" : ""}` : "—";
+  $("target2Price").textContent = fmt(decision.take_profit_price_2);
+  $("winRate").textContent = decision.estimated_win_rate == null ? "—" : `${decision.estimated_win_rate}%`;
+
+  // Render Position Context Badge
+  const posBadge = $("positionContextBadge");
+  const posCtx = result.position_context || result.position;
+  if (posBadge) {
+    if (posCtx && posCtx.has_position) {
+      const isLong = (posCtx.pos_side || "").toLowerCase() === "long";
+      posBadge.hidden = false;
+      posBadge.className = `position-context-badge ${isLong ? "long" : "short"}`;
+      const pnlText = posCtx.unrealized_pnl_ratio != null 
+        ? `${posCtx.unrealized_pnl_ratio >= 0 ? "+" : ""}${Number(posCtx.unrealized_pnl_ratio).toFixed(2)}%` 
+        : "—";
+      const pnlUsdt = posCtx.unrealized_pnl != null 
+        ? ` (${posCtx.unrealized_pnl >= 0 ? "+" : ""}${Number(posCtx.unrealized_pnl).toFixed(2)} U)` 
+        : "";
+      const slText = posCtx.current_sl ? fmt(posCtx.current_sl) : "未设";
+      posBadge.innerHTML = `<strong>🛡️ 当前实盘持仓：</strong>${isLong ? "做多" : "做空"} <b>${posCtx.pos_size}</b> 手 | 均价 <b>${fmt(posCtx.open_avg_px)}</b> | 浮盈 <b style="color:${posCtx.unrealized_pnl_ratio >= 0 ? 'var(--up)' : 'var(--down)'}">${pnlText}${pnlUsdt}</b> | 挂设止损 <b>${slText}</b>`;
+    } else {
+      posBadge.hidden = true;
+      posBadge.innerHTML = "";
+    }
+  }
+
+  const reasoningPrefix = sys === "dog_walking" ? "【🐕 遛狗系统决策】" : "【📊 2PA 价格行为决策】";
+  $("reasoning").textContent = decision.reasoning ? `${reasoningPrefix}\n${decision.reasoning}` : (result.exception?.message || "无交易决策");
+  $("executionResult").textContent = result.execution ? JSON.stringify(result.execution, null, 2) : "未提交订单";
+}
+
+function formatHistoryTime(timestamp) {
+  if (!timestamp) return "时间未知";
+  return new Date(Number(timestamp)).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function directionMeta(value) {
+  if (value === "做多" || value === "buy") return { label: value === "buy" ? "买入" : "做多", className: "long" };
+  if (value === "做空" || value === "sell") return { label: value === "sell" ? "卖出" : "做空", className: "short" };
+  return { label: "不下单", className: "neutral" };
+}
+
+function renderDecisionHistory() {
+  $("decisionHistoryCount").textContent = `${decisionRecords.length} 条`;
+  $("decisionHistoryState").hidden = decisionRecords.length > 0;
+  $("decisionHistoryState").textContent = decisionRecords.length ? "" : "暂无决策记录";
+  $("decisionHistory").innerHTML = decisionRecords.map((record) => {
+    const symbol = record.symbol || record.meta?.symbol || "未知品种";
+    const timeframe = record.timeframe || record.meta?.timeframe || "—";
+    const timestamp = record.timestamp_ms || record.meta?.timestamp_local_ms || 0;
+    const directionVal = record.direction || record.stage2_decision?.decision?.order_direction || record.stage2_decision?.order_direction || "不下单";
+    const orderTypeVal = record.order_type || record.stage2_decision?.decision?.order_type || record.stage2_decision?.order_type || "无订单";
+    const confidenceVal = record.confidence ?? record.stage2_decision?.decision?.trade_confidence ?? record.stage2_decision?.trade_confidence;
+
+    const direction = directionMeta(directionVal);
+    const exceptionText = typeof record.exception === "string" ? record.exception : (record.exception?.message || "");
+    const exception = exceptionText ? `<span class="history-error">${escapeHtml(exceptionText)}</span>` : "";
+    const confidence = confidenceVal == null ? "信心 —" : `信心 ${escapeHtml(confidenceVal)}%`;
+    const id = record.id || `${symbol}_${timeframe}_${timestamp}`;
+
+    return `
+      <div class="history-row" data-record-id="${escapeHtml(id)}">
+        <button class="history-main" type="button" data-action="open-decision" data-id="${escapeHtml(id)}">
+          <span class="history-line">
+            <strong>${escapeHtml(symbol)}</strong>
+            <span class="history-direction ${direction.className}">${direction.label}</span>
+            <b>${confidence}</b>
+          </span>
+          <span class="history-detail">${formatHistoryTime(timestamp)} · ${escapeHtml(timeframe)} · ${escapeHtml(orderTypeVal)}</span>
+          ${exception}
+        </button>
+        <button class="history-delete" type="button" data-action="delete-decision" data-id="${escapeHtml(id)}" title="删除决策记录" aria-label="删除决策记录">×</button>
+      </div>`;
+  }).join("");
+}
+
+async function loadDecisionHistory(silent = false) {
+  if (!silent) {
+    $("decisionHistoryState").hidden = false;
+    $("decisionHistoryState").textContent = "正在读取记录";
+  }
+  try {
+    decisionRecords = await api("/api/history/decisions?limit=50");
+    renderDecisionHistory();
+  } catch (error) {
+    if (!silent) {
+      $("decisionHistoryState").hidden = false;
+      $("decisionHistoryState").textContent = error.message;
+    }
+  }
+}
+
+function showDecisionRecord(recordId) {
+  const record = decisionRecords.find((item) => item.id === recordId || `${item.symbol || item.meta?.symbol}_${item.timeframe || item.meta?.timeframe}_${item.timestamp_ms || item.meta?.timestamp_local_ms}` === recordId);
+  if (!record) return;
+
+  const innerDec = record.stage2_decision?.decision || record.stage2_decision || {};
+  const decisionData = {
+    order_direction: record.direction || innerDec.order_direction,
+    order_type: record.order_type || innerDec.order_type,
+    trade_confidence: record.confidence ?? innerDec.trade_confidence,
+    entry_price: record.entry_price ?? innerDec.entry_price,
+    stop_loss_price: record.stop_loss_price ?? innerDec.stop_loss_price,
+    take_profit_price: record.take_profit_price ?? innerDec.take_profit_price,
+    take_profit_price_2: record.take_profit_price_2 ?? innerDec.take_profit_price_2,
+    estimated_win_rate: record.estimated_win_rate ?? innerDec.estimated_win_rate,
+    reasoning: record.reasoning || innerDec.reasoning || innerDec.narrative,
+  };
+
+  renderDecision({
+    decision: decisionData,
+    stage1: record.stage1_diagnosis,
+    stage2: record.stage2_decision,
+    exception: record.exception ? { message: typeof record.exception === "string" ? record.exception : (record.exception.message || JSON.stringify(record.exception)) } : null,
+    execution: null,
+  });
+  document.querySelectorAll("#decisionHistory .history-row").forEach((row) => {
+    row.classList.toggle("selected", row.dataset.recordId === recordId);
+  });
+}
+
+function formatTradeReason(reason) {
+  if (!reason) return "";
+  const r = String(reason).trim();
+  if (r === "signal expired") return "信号已过期 (K线生成时间已超时)";
+  if (r === "duplicate signal") return "重复信号 (当前K线周期已处理或挂单)";
+  if (r.includes("open position exists for") || r.includes("adding to position is disabled")) {
+    const match = r.match(/open position exists for (.*?);/);
+    const inst = match ? match[1] : "";
+    return `${inst} 已存在活跃持仓，系统已启用持仓互斥保护（禁止同向加仓）`;
+  }
+  if (r.includes("decision does not contain an executable order")) {
+    return "决策为不下单或不包含可执行订单";
+  }
+  if (r.includes("is below threshold")) {
+    return r.replace(/trade confidence (\d+) is below threshold (\d+)/, "交易信心度 $1% 低于设定风控门槛 $2%");
+  }
+  if (r.includes("is below minSz")) {
+    return r.replace(/order size (.+) is below minSz (.+)/, "下单数量 $1 低于交易所最小下单量 $2");
+  }
+  if (r.includes("must satisfy stop < entry < target")) {
+    return "做多价格关系异常：必须满足 止损价 < 入场价 < 止盈价";
+  }
+  if (r.includes("must satisfy target < entry < stop")) {
+    return "做空价格关系异常：必须满足 止盈价 < 入场价 < 止损价";
+  }
+  if (r.includes("missing entry_price")) return "缺少入场价 (entry_price)";
+  if (r.includes("missing stop_loss_price")) return "缺少止损价 (stop_loss_price)";
+  if (r.includes("missing take_profit_price")) return "缺少止盈价 (take_profit_price)";
+  if (r.includes("MT5 桥接未连接") || r.includes("MT5 执行失败")) return r;
+  return r;
+}
+
+function renderTradeHistory() {
+  $("tradeHistoryCount").textContent = `${tradeRecords.length} 条`;
+  $("tradeHistoryState").hidden = tradeRecords.length > 0;
+  $("tradeHistoryState").textContent = tradeRecords.length ? "" : "暂无交易记录";
+  const orderTypes = { limit: "限价", market: "市价", trigger: "触发" };
+  $("tradeHistory").innerHTML = tradeRecords.map((record) => {
+    const direction = directionMeta(record.direction);
+    const statusClass = record.submitted ? "submitted" : "rejected";
+    const statusLabel = record.submitted ? "已提交" : "未提交";
+    const price = record.price == null ? "市价" : fmt(record.price);
+    const detail = [
+      formatHistoryTime(record.timestamp_ms),
+      record.timeframe || "—",
+      orderTypes[record.order_type] || record.order_type || "无订单",
+      `数量 ${fmt(record.size)}`,
+      `价格 ${price}`,
+    ].join(" · ");
+    return `
+      <div class="history-row">
+        <div class="history-main trade-history-main">
+          <span class="history-line">
+            <strong>${escapeHtml(record.instrument || "未知品种")}</strong>
+            <span class="history-direction ${direction.className}">${direction.label}</span>
+            <b class="history-status ${statusClass}">${statusLabel}</b>
+          </span>
+          <span class="history-detail">${escapeHtml(detail)}</span>
+          ${record.reason ? `<span class="history-error">${escapeHtml(formatTradeReason(record.reason))}</span>` : ""}
+        </div>
+        <button class="history-delete" type="button" data-action="delete-trade" data-id="${escapeHtml(record.id)}" title="删除交易记录" aria-label="删除交易记录">×</button>
+      </div>`;
+  }).join("");
+}
+
+async function loadTradeHistory(silent = false) {
+  if (!silent) {
+    $("tradeHistoryState").hidden = false;
+    $("tradeHistoryState").textContent = "正在读取记录";
+  }
+  try {
+    tradeRecords = await api("/api/history/trades?limit=50");
+    renderTradeHistory();
+  } catch (error) {
+    if (!silent) {
+      $("tradeHistoryState").hidden = false;
+      $("tradeHistoryState").textContent = error.message;
+    }
+  }
+}
+
+async function deleteHistoryRecord(kind, recordId) {
+  if (!isAdmin()) {
+    toast("只读账号无权删除记录");
+    return;
+  }
+  const label = kind === "decisions" ? "决策" : "交易";
+  if (!window.confirm(`确定删除这条${label}记录？`)) return;
+  try {
+    await api(`/api/history/${kind}/${encodeURIComponent(recordId)}`, { method: "DELETE" });
+    if (kind === "decisions") await loadDecisionHistory(true);
+    else await loadTradeHistory(true);
+    toast(`${label}记录已删除`);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function analyze() {
+  const button = $("analyzeButton");
+  button.disabled = true;
+  const sysName = currentTradingSystem === "dog_walking" ? "🐕 遛狗系统" : "📊 2PA 价格行为";
+  $("analysisState").textContent = `正在获取行情并运行【${sysName}】两阶段 AI…`;
+  try {
+    const result = await api("/api/analyze", {
+      method: "POST",
+      body: JSON.stringify({
+        inst_id: $("symbol").value.trim(),
+        timeframe: $("timeframe").value,
+        bar_count: 100,
+        execute: $("executeAfterAnalysis").checked,
+        trading_system: currentTradingSystem,
+      }),
+    });
+    renderDecision(result);
+    loadDecisionHistory(true);
+    if ($("executeAfterAnalysis").checked) loadTradeHistory(true);
+    $("analysisState").textContent = result.exception ? `失败：${result.exception.message}` : `【${sysName}】分析完成`;
+    toast(result.execution?.submitted ? "订单已提交" : `【${sysName}】分析完成`);
+  } catch (error) {
+    $("analysisState").textContent = `失败：${error.message}`;
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function pnlClass(value) {
+  const number = Number(value || 0);
+  return number > 0 ? "positive" : number < 0 ? "negative" : "";
+}
+
+// 百分比格式化：正数带 +，负数自带 -，非数值返回占位符
+function formatPct(value, digits = 2) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return `${number > 0 ? "+" : ""}${number.toFixed(digits)}%`;
+}
+
+function formatAccountTime(timestamp) {
+  if (!timestamp) return "—";
+  return new Date(Number(timestamp)).toLocaleString(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderBalances(rows) {
+  $("balanceCount").textContent = rows.length;
+  $("balancesBody").innerHTML = rows.length
+    ? rows.map((row) => `
+      <tr>
+        <td><strong>${escapeHtml(row.currency || "—")}</strong></td>
+        <td>${fmt(row.balance)}</td>
+        <td>${fmt(row.equity)}</td>
+        <td>${fmt(row.free_margin)}</td>
+      </tr>`).join("")
+    : '<tr class="empty-row"><td colspan="4">暂无账户数据</td></tr>';
+}
+
+function renderPositions(rows) {
+  $("positionCount").textContent = rows.length;
+  $("positionsBody").innerHTML = rows.length
+    ? rows.map((row) => {
+      const side = row.side === "short" ? "short" : "long";
+      const label = side === "short" ? "空" : "多";
+      const totalPnl = Number(row.profit || 0) + Number(row.swap || 0);
+      const sltp = [
+        row.sl > 0 ? `SL ${fmt(row.sl)}` : "",
+        row.tp > 0 ? `TP ${fmt(row.tp)}` : "",
+      ].filter(Boolean).join(" · ");
+      return `
+        <tr>
+          <td><strong>${escapeHtml(row.symbol)}</strong><span class="side-label ${side}">${label}</span></td>
+          <td>${fmt(row.volume)} 手<small>#${row.ticket}${sltp ? ` · ${sltp}` : ""}</small></td>
+          <td>${fmt(row.price_open)}<small>${fmt(row.price_current)}</small></td>
+          <td class="${pnlClass(totalPnl)}">${fmtMoney(totalPnl)}<small>swap ${fmtMoney(row.swap)}</small></td>
+        </tr>`;
+    }).join("")
+    : '<tr class="empty-row"><td colspan="4">暂无仓位</td></tr>';
+}
+
+function renderOrders(rows) {
+  $("orderCount").textContent = rows.length;
+  const typeLabels = {
+    buy_limit: "限价买", sell_limit: "限价卖",
+    buy_stop: "突破买", sell_stop: "突破卖",
+    buy_stoplimit: "限停买", sell_stoplimit: "限停卖",
+  };
+  $("ordersBody").innerHTML = rows.length
+    ? rows.map((row) => {
+      const isSell = String(row.kind || "").startsWith("sell");
+      const direction = isSell ? "short" : "long";
+      const directionLabel = isSell ? "卖" : "买";
+      const typeLabel = typeLabels[row.kind] || row.kind || "挂单";
+      let priceDisplay = fmt(row.price);
+      if (row.tp > 0 || row.sl > 0) {
+        priceDisplay = `${fmt(row.price)}<small>${row.tp > 0 ? `TP ${fmt(row.tp)}` : ""}${row.tp > 0 && row.sl > 0 ? " / " : ""}${row.sl > 0 ? `SL ${fmt(row.sl)}` : ""}</small>`;
+      }
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(row.symbol)}</strong><span class="side-label ${direction}">${directionLabel}</span></td>
+          <td>${escapeHtml(typeLabel)}<small>#${row.ticket}</small></td>
+          <td>${fmt(row.volume)} 手</td>
+          <td>${priceDisplay}</td>
+          <td><button class="table-action-button" style="padding:2px 8px;font-size:11px;" data-action="cancel-order" data-inst-id="${escapeHtml(row.symbol)}" data-ticket="${escapeHtml(row.ticket)}">撤单</button></td>
+        </tr>`;
+    }).join("")
+    : '<tr class="empty-row"><td colspan="5">暂无挂单</td></tr>';
+}
+
+// ==================== 涨跌配色（红涨绿跌 / 绿涨红跌） ====================
+// 涨跌语义色统一从 CSS 变量 --up / --down 读取，切换只改 <html data-updown>，
+// 由 static/app.css 里的 :root 与 html[data-updown="intl"] 两套值决定实际颜色。
+// --green / --red 是品牌与状态色（主按钮、品牌块、徽标、开关），不参与涨跌，故不在此列。
+function cssVar(name, fallback) {
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+  } catch (error) {
+    return fallback; // 无样式环境（如 Node 单元测试）退回兜底色
+  }
+}
+
+// canvas 无法解析 var(--x)，必须取真实颜色值。绘制循环里逐点调用 getComputedStyle 太贵，
+// 因此按模式缓存一次；切换配色时用 invalidateUpdownColors() 失效。
+function updownColors() {
+  if (updownColors.cache) return updownColors.cache;
+  updownColors.cache = {
+    up: cssVar("--up", EQUITY_LOSS_COLOR),
+    down: cssVar("--down", "#1fc48d"),
+    upBand: cssVar("--up-band", "rgba(240,91,103,.16)"),
+    downBand: cssVar("--down-band", "rgba(31,196,141,.16)"),
+    upBandStrong: cssVar("--up-band-strong", "rgba(240,91,103,.35)"),
+    downBandStrong: cssVar("--down-band-strong", "rgba(31,196,141,.35)"),
+  };
+  return updownColors.cache;
+}
+function invalidateUpdownColors() {
+  updownColors.cache = null;
+}
+function upColor() { return updownColors().up; }
+function downColor() { return updownColors().down; }
+
+// 涨跌配色模式：cn = 红涨绿跌（默认，国内习惯）；intl = 绿涨红跌（国际惯例）
+const UPDOWN_KEY = "mt5_updown";
+function currentUpdown() {
+  return document.documentElement.dataset.updown === "intl" ? "intl" : "cn";
+}
+function applyUpdown(mode, redraw = true) {
+  const next = mode === "intl" ? "intl" : "cn";
+  document.documentElement.dataset.updown = next;
+  try {
+    localStorage.setItem(UPDOWN_KEY, next);
+  } catch (error) {}
+  invalidateUpdownColors();
+  const button = $("updownToggle");
+  if (button) {
+    button.textContent = next === "cn" ? "🔴 红涨绿跌" : "🟢 绿涨红跌";
+    button.title = next === "cn"
+      ? "当前红涨绿跌（国内习惯），点击切换为绿涨红跌"
+      : "当前绿涨红跌（国际惯例），点击切换为红涨绿跌";
+  }
+  // CSS 类（盈亏/方向/涨跌幅）会自动跟随变量，但 canvas 用的是取到的颜色值，必须重绘
+  if (redraw) {
+    try { drawChart(); } catch (error) {}
+    try { drawEquityChart(); } catch (error) {}
+  }
+}
+function initUpdownToggle() {
+  const button = $("updownToggle");
+  applyUpdown(currentUpdown(), false);
+  if (!button) return;
+  button.addEventListener("click", () => applyUpdown(currentUpdown() === "cn" ? "intl" : "cn"));
+}
+
+// ==================== 权益曲线绘制（净值 + 余额双线） ====================
+// 两条线用固定身份色，不随涨跌变色——否则无法区分哪条是净值、哪条是余额。
+const EQUITY_NET_COLOR = "#4b94f5"; // 净值 account.equity：身份色（蓝），刻意不用涨跌语义色
+const EQUITY_BAL_COLOR = "#8b98a0"; // 余额 account.balance（阶梯线）
+const EQUITY_LOSS_COLOR = "#f05b67"; // 仅作 --up 取不到时的兜底红
+
+// 悬停状态：最近一次绘制的几何信息用于 mousemove 反查采样点
+let equityHoverIndex = null;
+let equityHoverGeom = null;
+
+// 空值/非数值一律判为缺失。注意 Number(null) === 0、Number("") === 0 都是有限数，
+// 不显式挡掉的话，缺失的余额会被当成 0 参与绘图，把 Y 轴拉到 0 并压平两条线。
+function toFiniteNumber(input) {
+  if (input === null || input === undefined || input === "") return null;
+  const number = Number(input);
+  return Number.isFinite(number) ? number : null;
+}
+
+// 余额字段缺失时回退到净值（兼容老记录），避免画出断线
+function equityBalanceOf(point) {
+  const balance = toFiniteNumber(point && point.balance);
+  if (balance !== null) return balance;
+  const value = toFiniteNumber(point && point.value);
+  return value === null ? 0 : value;
+}
+
+// 浮盈 = 净值 − 余额，先取整到分：既避免 "-0.00" 这种显示，
+// 也避免浮点残差把浮盈带的正负判反（-1e-9 会被当成浮亏）。
+function equityDiff(net, balance) {
+  const diff = Math.round((Number(net) - Number(balance)) * 100) / 100;
+  return diff === 0 ? 0 : diff;
+}
+
+// 采样点 → 两条线的数值对（净值为空则用余额兜底）
+function equitySeries() {
+  return equityPoints.map((point) => {
+    const bal = equityBalanceOf(point);
+    const net = toFiniteNumber(point && point.value);
+    return { ts: Number(point && point.ts), net: net === null ? bal : net, bal };
+  });
+}
+
+// 时间戳 → 画布 x（hover 反查用，必须与 drawEquityChart 内的映射一致）
+function equityXOf(ts, geom) {
+  if (geom.t1 === geom.t0) return geom.left + geom.plotWidth / 2;
+  return geom.left + ((ts - geom.t0) * geom.plotWidth) / (geom.t1 - geom.t0);
+}
+
+function drawEquityChart() {
+  const canvas = $("equityCanvas");
+  const wrap = canvas.parentElement;
+  const placeholder = $("equityEmpty");
+  const width = wrap.clientWidth;
+  const height = wrap.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const context = canvas.getContext("2d");
+  context.scale(dpr, dpr);
+  context.clearRect(0, 0, width, height);
+  equityHoverGeom = null;
+
+  const series = equitySeries();
+  if (!series.length) {
+    equityHoverIndex = null;
+    placeholder.style.display = "grid";
+    return;
+  }
+  placeholder.style.display = "none";
+
+  const nets = series.map((item) => item.net);
+  const bals = series.map((item) => item.bal);
+  // Y 轴范围必须同时包住两条线：浮亏时余额会高于净值，只按净值算会把余额裁掉
+  const rawMin = Math.min(...nets, ...bals);
+  const rawMax = Math.max(...nets, ...bals);
+  const paddingValue = Math.max((rawMax - rawMin) * 0.12, Math.max(Math.abs(rawMax), 1) * 0.002);
+  const low = rawMin - paddingValue;
+  const high = rawMax + paddingValue;
+  const range = high - low || 1;
+  const padding = { left: 8, right: 64, top: 30, bottom: 30 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const t0 = series[0].ts;
+  const t1 = series.at(-1).ts;
+  const x = (ts) => equityXOf(ts, { left: padding.left, plotWidth, t0, t1 });
+  const y = (value) => padding.top + ((high - value) / range) * plotHeight;
+  equityHoverGeom = { series, left: padding.left, plotWidth, t0, t1 };
+
+  context.strokeStyle = "#252b2e";
+  context.fillStyle = "#7f898d";
+  context.font = "10px Segoe UI";
+  [rawMax, (rawMax + rawMin) / 2, rawMin].forEach((value) => {
+    const yy = y(value);
+    context.beginPath();
+    context.moveTo(padding.left, yy);
+    context.lineTo(width - padding.right, yy);
+    context.stroke();
+    context.fillText(fmtMoney(value), width - padding.right + 7, yy + 2);
+    // 金额刻度下方补一行「相对区间首点（净值）」的百分比
+    const pct = equityPctAt(value);
+    if (pct !== null) {
+      context.font = "9px Segoe UI";
+      context.fillStyle = pct > 0 ? upColor() : pct < 0 ? downColor() : "#7f898d";
+      context.fillText(formatPct(pct), width - padding.right + 7, yy + 12);
+      context.font = "10px Segoe UI";
+      context.fillStyle = "#7f898d";
+    }
+  });
+
+  // 0% 基准线 = 区间首点权益（净值）所在位置
+  const baseValue = equityBaseValue();
+  if (baseValue !== null) {
+    const baseY = y(baseValue);
+    context.save();
+    context.setLineDash([3, 3]);
+    context.strokeStyle = "#3f4a4f";
+    context.beginPath();
+    context.moveTo(padding.left, baseY);
+    context.lineTo(width - padding.right, baseY);
+    context.stroke();
+    context.restore();
+  }
+
+  // 净值与余额之间填一层带：带的高度就是浮动盈亏
+  const upl = equityDiff(nets.at(-1), bals.at(-1));
+  context.beginPath();
+  series.forEach((item, index) => {
+    const px = x(item.ts);
+    const py = y(item.net);
+    if (index === 0) context.moveTo(px, py);
+    else context.lineTo(px, py);
+  });
+  for (let index = series.length - 1; index >= 0; index -= 1) {
+    context.lineTo(x(series[index].ts), y(series[index].bal));
+  }
+  context.closePath();
+  // 浮盈带的颜色是涨跌语义，必须跟随配色开关（canvas 不能解析 var()，取缓存值）
+  context.fillStyle = upl >= 0 ? updownColors().upBand : updownColors().downBand;
+  context.fill();
+
+  // 余额：阶梯线。余额只在平仓/出入金时跳变，画成斜线会误导
+  context.beginPath();
+  let stepY = y(bals[0]);
+  context.moveTo(x(series[0].ts), stepY);
+  series.forEach((item, index) => {
+    if (index === 0) return;
+    const px = x(item.ts);
+    context.lineTo(px, stepY);
+    stepY = y(item.bal);
+    context.lineTo(px, stepY);
+  });
+  context.lineWidth = 1.6;
+  context.strokeStyle = EQUITY_BAL_COLOR;
+  context.stroke();
+
+  // 净值：连续曲线，画在最上层
+  context.beginPath();
+  series.forEach((item, index) => {
+    const px = x(item.ts);
+    const py = y(item.net);
+    if (index === 0) context.moveTo(px, py);
+    else context.lineTo(px, py);
+  });
+  context.lineWidth = 2;
+  context.strokeStyle = EQUITY_NET_COLOR;
+  context.stroke();
+
+  // 末端圆点
+  const last = series.at(-1);
+  [[EQUITY_NET_COLOR, last.net], [EQUITY_BAL_COLOR, last.bal]].forEach(([color, value]) => {
+    context.beginPath();
+    context.arc(x(last.ts), y(value), 3, 0, Math.PI * 2);
+    context.fillStyle = color;
+    context.fill();
+  });
+
+  // 悬停：竖线 + 两个落点 + 数据气泡
+  if (equityHoverIndex !== null && series[equityHoverIndex]) {
+    const item = series[equityHoverIndex];
+    const px = x(item.ts);
+    context.save();
+    context.setLineDash([2, 3]);
+    context.strokeStyle = "#4a555a";
+    context.beginPath();
+    context.moveTo(px, padding.top);
+    context.lineTo(px, padding.top + plotHeight);
+    context.stroke();
+    context.restore();
+    [[EQUITY_NET_COLOR, item.net], [EQUITY_BAL_COLOR, item.bal]].forEach(([color, value]) => {
+      context.beginPath();
+      context.arc(px, y(value), 3, 0, Math.PI * 2);
+      context.fillStyle = color;
+      context.fill();
+      context.lineWidth = 1.5;
+      context.strokeStyle = "#0d1011";
+      context.stroke();
+    });
+    const diff = equityDiff(item.net, item.bal);
+    const rows = [
+      [formatAccountTime(item.ts), "#dfe8ec"],
+      [`净值 ${fmtMoney(item.net)}`, EQUITY_NET_COLOR],
+      [`余额 ${fmtMoney(item.bal)}`, EQUITY_BAL_COLOR],
+      [`浮盈 ${diff > 0 ? "+" : ""}${fmtMoney(diff)}`, diff >= 0 ? upColor() : downColor()],
+    ];
+    context.font = "11px Segoe UI";
+    const boxWidth = Math.max(...rows.map(([text]) => context.measureText(text).width)) + 20;
+    const boxHeight = rows.length * 15 + 12;
+    let boxX = px + 12;
+    if (boxX + boxWidth > width - 4) boxX = px - 12 - boxWidth;
+    let boxY = y(item.net) - boxHeight / 2;
+    boxY = Math.max(padding.top, Math.min(boxY, height - padding.bottom - boxHeight));
+    context.fillStyle = "rgba(13,16,17,.94)";
+    context.strokeStyle = "#333c40";
+    context.lineWidth = 1;
+    context.beginPath();
+    context.rect(boxX, boxY, boxWidth, boxHeight);
+    context.fill();
+    context.stroke();
+    rows.forEach(([text, color], index) => {
+      context.fillStyle = color;
+      context.fillText(text, boxX + 10, boxY + 20 + index * 15);
+    });
+  }
+
+  context.fillStyle = "#737d81";
+  context.font = "10px Segoe UI";
+  context.fillText(formatAccountTime(series[0].ts), padding.left, height - 7);
+  const endLabel = formatAccountTime(last.ts);
+  const endWidth = context.measureText(endLabel).width;
+  context.fillText(endLabel, width - padding.right - endWidth, height - 7);
+}
+
+// 画布悬停：找最近采样点并重绘（点数 ≤500，重绘成本可忽略）
+function initEquityChartInteractions() {
+  const canvas = $("equityCanvas");
+  if (!canvas || canvas.dataset.hoverBound === "1") return;
+  canvas.dataset.hoverBound = "1";
+  canvas.addEventListener("mousemove", (event) => {
+    const geom = equityHoverGeom;
+    if (!geom) return;
+    const mx = event.offsetX;
+    let best = null;
+    let bestDistance = Infinity;
+    geom.series.forEach((item, index) => {
+      const distance = Math.abs(equityXOf(item.ts, geom) - mx);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    if (best === equityHoverIndex) return;
+    equityHoverIndex = best;
+    drawEquityChart();
+  });
+  canvas.addEventListener("mouseleave", () => {
+    if (equityHoverIndex === null) return;
+    equityHoverIndex = null;
+    drawEquityChart();
+  });
+}
+
+// 图例：显示最新采样点的净值 / 余额 / 浮动盈亏
+function renderEquityLegend() {
+  const node = $("equityLegend");
+  if (!node) return;
+  if (!equityPoints.length) {
+    node.hidden = true;
+    node.innerHTML = "";
+    return;
+  }
+  const { net, bal } = equitySeries().at(-1);
+  const diff = equityDiff(net, bal);
+  node.hidden = false;
+  node.innerHTML = [
+    `<span class="lg-item"><i class="lg-line" style="background:${EQUITY_NET_COLOR}"></i>净值 <b>${fmtMoney(net)}</b></span>`,
+    `<span class="lg-item"><i class="lg-step" style="background:${EQUITY_BAL_COLOR}"></i>余额 <b>${fmtMoney(bal)}</b></span>`,
+    `<span class="lg-item"><i class="lg-band" style="background:${diff >= 0 ? updownColors().upBandStrong : updownColors().downBandStrong}"></i>浮盈 <b class="${pnlClass(diff)}">${diff > 0 ? "+" : ""}${fmtMoney(diff)}</b></span>`,
+  ].join("");
+}
+
+function renderAccount(account) {
+  const summary = account.summary || {};
+  $("totalEquity").textContent = fmtMoney(summary.total_equity_usd);
+  $("availableEquity").textContent = fmtMoney(summary.available_equity_usd);
+  $("accountUpl").textContent = fmtMoney(summary.unrealized_pnl);
+  $("accountUpl").className = pnlClass(summary.unrealized_pnl);
+  $("accountUpdated").textContent = formatAccountTime(summary.updated_at_ms || Date.now());
+
+  renderBalances(account.balances || []);
+  renderPositions(account.positions || []);
+  renderOrders(account.orders || []);
+  drawEquityChart();
+}
+
+const EQUITY_RANGE_MS = { "1h": 3600e3, "24h": 86400e3, "7d": 7 * 86400e3, "30d": 30 * 86400e3 };
+const EQUITY_RANGE_LABEL = { "1h": "近1小时", "24h": "近24小时", "7d": "近7天", "30d": "近30天", "all": "全部", "custom": "自定义" };
+
+async function loadEquityCurve(silent = true) {
+  const now = Date.now();
+  let from;
+  let to = now;
+  if (equityRange === "custom") {
+    const fv = $("equityFromInput").value;
+    const tv = $("equityToInput").value;
+    if (!fv || !tv) return;
+    from = new Date(fv).getTime();
+    to = new Date(tv).getTime();
+    if (!(from < to)) {
+      if (!silent) toast("时间段无效：开始时间必须早于结束时间");
+      return;
+    }
+  } else if (equityRange === "all") {
+    from = 0;
+  } else {
+    from = now - (EQUITY_RANGE_MS[equityRange] || 86400e3);
+  }
+  try {
+    const res = await api(`/api/account/equity?from=${from}&to=${to}`);
+    equityPoints = res.points || [];
+    $("equityRange").textContent = equityPoints.length
+      ? `${EQUITY_RANGE_LABEL[equityRange] || "自定义"} · ${equityPoints.length} 点`
+      : `${EQUITY_RANGE_LABEL[equityRange] || "自定义"} · 暂无数据`;
+    // 快捷时间段切换后同步日期框，避免它一直显示陈旧区间造成误判
+    if (equityRange !== "custom") {
+      syncEquityDateInputs(
+        equityPoints.length ? Number(equityPoints[0].ts) : from,
+        equityPoints.length ? Number(equityPoints.at(-1).ts) : to,
+      );
+    }
+    renderEquityReturn();
+    renderEquityLegend();
+    drawEquityChart();
+  } catch (error) {
+    if (!silent) toast(`权益曲线加载失败: ${error.message}`);
+  }
+}
+
+// 区间总收益率：基准 = 区间首个采样点权益（切换时间段时 0% 随之移动）
+function equityBaseValue() {
+  if (equityPoints.length < 2) return null;
+  const base = Number(equityPoints[0].value);
+  return Number.isFinite(base) && base !== 0 ? base : null;
+}
+
+// 某点权益相对区间首点的百分比；基准缺失/为 0 时返回 null
+function equityPctAt(value) {
+  const base = equityBaseValue();
+  if (base === null) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return ((number - base) / Math.abs(base)) * 100;
+}
+
+function renderEquityReturn() {
+  const node = $("equityPct");
+  if (!node) return;
+  const base = equityBaseValue();
+  if (base === null) {
+    node.textContent = "";
+    node.className = "";
+    return;
+  }
+  const pct = equityPctAt(equityPoints.at(-1).value);
+  node.textContent = `区间 ${formatPct(pct)}`;
+  node.className = `equity-pct ${pnlClass(pct)}`;
+  node.title = `基准：区间首点 ${fmtMoney(base)}`;
+}
+
+function setEquityRange(range) {
+  equityRange = range;
+  document.querySelectorAll("#equityToolbar .equity-quick button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.range === range);
+  });
+  loadEquityCurve();
+}
+
+// 时间戳 → datetime-local 输入框值（本地时区）
+function toLocalInputValue(ms) {
+  const d = new Date(Number(ms));
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 把当前实际区间写回日期框（仅快捷时间段，自定义时不动用户输入）
+function syncEquityDateInputs(fromMs, toMs) {
+  const fromNode = $("equityFromInput");
+  const toNode = $("equityToInput");
+  if (!fromNode || !toNode) return;
+  if (Number.isFinite(Number(fromMs))) fromNode.value = toLocalInputValue(fromMs);
+  if (Number.isFinite(Number(toMs))) toNode.value = toLocalInputValue(toMs);
+}
+
+function initEquityToolbar() {
+  document.querySelectorAll("#equityToolbar .equity-quick button").forEach((button) => {
+    button.addEventListener("click", () => setEquityRange(button.dataset.range));
+  });
+  $("equityCustomApply").addEventListener("click", () => setEquityRange("custom"));
+  // 预填自定义输入框：默认近 24 小时
+  const to = Date.now();
+  syncEquityDateInputs(to - 86400e3, to);
+  initEquityChartInteractions();
+}
+
+async function loadAccount(silent = false) {
+  const state = $("accountState");
+  const dashboard = $("accountDashboard");
+  if (!silent && dashboard.hidden) {
+    state.textContent = "正在读取账户";
+    state.style.display = "block";
+  }
+  try {
+    const account = await api("/api/account");
+    if (!account.configured) {
+      dashboard.hidden = true;
+      state.textContent = "MT5 桥接未连接（请启动 MT5 终端并挂载 PABridge EA）";
+      state.style.display = "block";
+      return;
+    }
+    dashboard.hidden = false;
+    state.style.display = "none";
+    renderAccount(account);
+  } catch (error) {
+    if (!silent) {
+      dashboard.hidden = true;
+      state.textContent = error.message;
+      state.style.display = "block";
+    }
+  }
+}
+
+async function toggleAutomation() {
+  const switchElement = $("automationSwitch");
+  const expectedCode = statusData?.mode === "live" ? "ENABLE LIVE" : "ENABLE DEMO";
+  const confirmVal = $("confirmation").value.trim().toUpperCase();
+
+  if (switchElement.checked && confirmVal !== expectedCode) {
+    switchElement.checked = false;
+    $("confirmation").focus();
+    $("confirmation").classList.add("confirm-input-pulse");
+    setTimeout(() => $("confirmation").classList.remove("confirm-input-pulse"), 1500);
+    toast(`⚠️ 开启失败：必须在上方输入框输入「${expectedCode}」！`);
+    return;
+  }
+
+  try {
+    const state = await api("/api/automation", {
+      method: "POST",
+      body: JSON.stringify(automationRequestBody(switchElement.checked)),
+    });
+    statusData = state;
+    sessionDirty = false;
+    renderAutomationStatus(state, true);
+    toast($("automationMessage").textContent);
+  } catch (error) {
+    switchElement.checked = !switchElement.checked;
+    toast(error.message);
+  }
+}
+
+function changeSessionPreset() {
+  const preset = $("sessionPreset").value;
+  const option = sessionPresetOptions.find((item) => item.key === preset);
+  if (option) {
+    $("sessionTimezone").value = option.timezone;
+    $("sessionStart").value = option.start;
+    $("sessionEnd").value = option.end;
+    setSessionWeekdays(option.weekdays);
+    $("sessionDescription").textContent = option.description;
+  } else {
+    $("sessionDescription").textContent = "按自定义时区、时间和星期运行";
+  }
+  $("customSessionFields").hidden = preset !== "custom";
+  sessionDirty = true;
+}
+
+async function applyAutomationSession() {
+  const button = $("sessionApply");
+  button.disabled = true;
+  try {
+    const state = await api("/api/automation", {
+      method: "POST",
+      body: JSON.stringify(automationRequestBody($("automationSwitch").checked)),
+    });
+    statusData = state;
+    sessionDirty = false;
+    renderAutomationStatus(state, true);
+    toast("分析时段已应用");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.querySelectorAll(".tabs button").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button,.tab-content").forEach((item) => item.classList.remove("active"));
+  button.classList.add("active");
+  $(`${button.dataset.tab}Tab`).classList.add("active");
+  if (button.dataset.tab === "account") { loadAccount(); loadEquityCurve(); }
+  if (button.dataset.tab === "contract") loadContractSpecs();
+  if (button.dataset.tab === "decision") loadDecisionHistory();
+  if (button.dataset.tab === "automation") loadTradeHistory();
+}));
+
+$("instType").addEventListener("change", changeInstrumentType);
+$("symbolToggle").addEventListener("click", () => {
+  if ($("instrumentMenu").hidden) renderInstrumentMenu();
+  else closeInstrumentMenu();
+  $("symbol").focus();
+});
+$("symbol").addEventListener("focus", () => {
+  if ($("instrumentMenu").hidden) renderInstrumentMenu();
+});
+$("symbol").addEventListener("input", () => renderInstrumentMenu($("symbol").value));
+$("symbol").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if ($("instrumentMenu").hidden) renderInstrumentMenu($("symbol").value);
+    moveInstrumentHighlight(event.key === "ArrowDown" ? 1 : -1);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    const value = visibleInstrumentValues[highlightedInstrumentIndex] || $("symbol").value.trim().toUpperCase();
+    if (value) chooseInstrument(value);
+  } else if (event.key === "Escape") {
+    closeInstrumentMenu();
+  }
+});
+$("instrumentMenu").addEventListener("mousedown", (event) => {
+  const option = event.target.closest(".instrument-option");
+  if (!option) return;
+  event.preventDefault();
+  chooseInstrument(option.dataset.value);
+});
+document.addEventListener("mousedown", (event) => {
+  if (!event.target.closest(".symbol-control")) closeInstrumentMenu();
+});
+$("timeframe").addEventListener("change", () => { rememberTimeframe(); loadCandles(); });
+$("refreshButton").addEventListener("click", loadCandles);
+$("analyzeButton").addEventListener("click", analyze);
+$("accountRefresh").addEventListener("click", () => { loadAccount(); loadEquityCurve(false); });
+$("decisionHistoryRefresh").addEventListener("click", () => loadDecisionHistory());
+$("tradeHistoryRefresh").addEventListener("click", () => loadTradeHistory());
+$("sessionPreset").addEventListener("change", changeSessionPreset);
+$("customSessionFields").addEventListener("input", () => { sessionDirty = true; });
+$("sessionApply").addEventListener("click", applyAutomationSession);
+$("decisionHistory").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  if (button.dataset.action === "open-decision") showDecisionRecord(button.dataset.id);
+  if (button.dataset.action === "delete-decision") deleteHistoryRecord("decisions", button.dataset.id);
+});
+$("tradeHistory").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action='delete-trade']");
+  if (button) deleteHistoryRecord("trades", button.dataset.id);
+});
+$("ordersBody").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-action='cancel-order']");
+  if (!button) return;
+  if (!isAdmin()) {
+    toast("只读账号无权撤单");
+    return;
+  }
+  const instId = button.dataset.instId;
+  const ticket = button.dataset.ticket;
+  if (!confirm(`确认撤销 ${instId} 挂单 #${ticket}？`)) return;
+  try {
+    await api("/api/trade/cancel", {
+      method: "POST",
+      body: JSON.stringify({ inst_id: instId, ticket: Number(ticket) }),
+    });
+    toast(`已提交撤销 ${instId} 挂单`);
+    await loadAccount(true);
+  } catch (err) {
+    toast(`撤单失败: ${err.message}`);
+  }
+});
+$("cancelAllOrdersBtn").addEventListener("click", async () => {
+  if (!confirm("确认一键撤销所有当前挂单与条件委托？")) return;
+  try {
+    const res = await api("/api/trade/cancel_all", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    toast(`已成功撤销 ${res.cancelled_count || 0} 个挂单`);
+    await loadAccount(true);
+  } catch (err) {
+    toast(`一键撤单失败: ${err.message}`);
+  }
+});
+$("tradingSystemSelect").addEventListener("change", async (e) => {
+  currentTradingSystem = e.target.value;
+  try {
+    localStorage.setItem("mt5_trading_system", currentTradingSystem);
+  } catch {}
+  updateSystemUI();
+  drawChart();
+  const name = currentTradingSystem === "dog_walking" ? "🐕 遛狗系统 (SMA 14/170)" : "📊 2PA 价格行为系统";
+  toast(`已切换交易系统为: ${name}`);
+  try {
+    const updatedStatus = await api("/api/trading_system", {
+      method: "POST",
+      body: JSON.stringify({ trading_system: currentTradingSystem }),
+    });
+    statusData = updatedStatus;
+    renderAutomationStatus(updatedStatus);
+  } catch (err) {
+    console.warn("同步交易系统到后端失败:", err);
+  }
+});
+$("automationSwitch").addEventListener("change", toggleAutomation);
+window.addEventListener("resize", () => {
+  drawChart();
+  if (!$("accountDashboard").hidden) drawEquityChart();
+});
+
+// ==================== 系统配置向导交互 ====================
+async function openConfigModal() {
+  const modal = $("configModal");
+  $("configSaveMsg").textContent = "";
+  modal.hidden = false;
+  try {
+    const cfg = await api("/api/config");
+    $("cfgLlmBaseUrl").value = cfg.llm_base_url || "https://api.deepseek.com";
+    $("cfgLlmModel").value = cfg.llm_model || "deepseek-v4-flash";
+    $("cfgLlmThinking").checked = Boolean(cfg.llm_thinking);
+    if ($("cfgTradingSystem")) $("cfgTradingSystem").value = cfg.trading_system || currentTradingSystem || "2pa";
+    const llmKey = String(cfg.llm_api_key || "");
+    $("cfgLlmApiKey").value = llmKey.includes("*") ? "" : llmKey;
+    $("cfgLlmApiKey").placeholder = llmKey.includes("*") ? `已配置 (${llmKey}) 留空保持不变` : "sk-...（首次配置必填）";
+    const token = String(cfg.mt5_bridge_token || "");
+    if ($("cfgMt5BridgeToken")) {
+      $("cfgMt5BridgeToken").value = token.includes("*") ? "" : token;
+      $("cfgMt5BridgeToken").placeholder = token.includes("*") ? `已配置 (${token}) 留空保持不变` : "留空表示不校验";
+    }
+    if ($("cfgMt5MagicNumber")) $("cfgMt5MagicNumber").value = cfg.mt5_magic_number || 20260907;
+    if ($("cfgMt5AutoOrderSizing")) $("cfgMt5AutoOrderSizing").checked = cfg.mt5_auto_order_sizing !== false;
+    if ($("cfgMt5RiskPercent")) $("cfgMt5RiskPercent").value = cfg.mt5_risk_percent || 2.0;
+    if ($("cfgMt5MaxMarginPercent")) $("cfgMt5MaxMarginPercent").value = cfg.mt5_max_margin_percent || 25.0;
+    if (cfg.mt5_default_order_size) $("cfgMt5OrderSize").value = cfg.mt5_default_order_size;
+    if (cfg.mt5_default_leverage) $("cfgMt5Leverage").value = cfg.mt5_default_leverage;
+  } catch (err) {
+    console.warn("加载配置失败:", err);
+  }
+}
+
+function closeConfigModal() {
+  $("configModal").hidden = true;
+}
+
+async function handleSaveConfig(event) {
+  event.preventDefault();
+  const btn = $("saveConfigBtn");
+  btn.disabled = true;
+  $("configSaveMsg").textContent = "正在保存到 .env 并热加载...";
+  try {
+    const payload = {
+      llm_api_key: $("cfgLlmApiKey").value.trim(),
+      llm_base_url: $("cfgLlmBaseUrl").value.trim(),
+      llm_model: $("cfgLlmModel").value.trim(),
+      llm_thinking: $("cfgLlmThinking").checked,
+      trading_system: $("cfgTradingSystem") ? $("cfgTradingSystem").value : currentTradingSystem,
+      mt5_bridge_token: $("cfgMt5BridgeToken") ? $("cfgMt5BridgeToken").value.trim() : "",
+      mt5_magic_number: $("cfgMt5MagicNumber") ? Number($("cfgMt5MagicNumber").value) || 20260907 : 20260907,
+      mt5_auto_order_sizing: $("cfgMt5AutoOrderSizing") ? $("cfgMt5AutoOrderSizing").checked : true,
+      mt5_risk_percent: $("cfgMt5RiskPercent") ? Number($("cfgMt5RiskPercent").value) : 2.0,
+      mt5_max_margin_percent: $("cfgMt5MaxMarginPercent") ? Number($("cfgMt5MaxMarginPercent").value) : 25.0,
+      mt5_default_order_size: Number($("cfgMt5OrderSize").value) || 0.1,
+      mt5_default_leverage: Number($("cfgMt5Leverage").value) || 100,
+    };
+
+    await api("/api/config/save_env", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    toast("✅ 配置已成功保存至根目录 .env！");
+    closeConfigModal();
+    await loadStatus();
+    if ($("accountTab").classList.contains("active")) loadAccount();
+  } catch (error) {
+    $("configSaveMsg").textContent = `保存失败: ${error.message}`;
+    toast(error.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("configButton").addEventListener("click", openConfigModal);
+$("closeConfigBtn").addEventListener("click", closeConfigModal);
+$("cancelConfigBtn").addEventListener("click", closeConfigModal);
+$("configForm").addEventListener("submit", handleSaveConfig);
+$("configModal").addEventListener("click", (e) => {
+  if (e.target === $("configModal")) closeConfigModal();
+});
+
+// ==================== 品种规格与手数换算 ====================
+let contractSpecsList = [];
+let currentContractSpec = null;
+let contractCalcMode = "usdt";
+
+function renderContractSpecCard(spec) {
+  if (!spec) return;
+  currentContractSpec = spec;
+  $("specInstId").textContent = spec.symbol;
+  $("specLastPrice").textContent = spec.last_price > 0 ? fmt(spec.last_price, 5) : "暂无报价";
+
+  $("specCtVal").textContent = fmt(spec.contract_size, 2);
+  const notional = spec.notional_per_lot || (spec.contract_size * (spec.last_price || 0));
+  $("specUsdtPerCt").textContent = notional > 0 ? `≈ ${fmtMoney(notional)}` : "—";
+
+  $("specMinSz").textContent = `${spec.volume_min} 手`;
+  $("specLotSz").textContent = `${spec.volume_step} 手`;
+  $("specMaxLev").textContent = spec.trade_mode === "full" ? "可正常交易" : (spec.trade_mode === "closeonly" ? "仅可平仓" : "禁止交易");
+  $("specTickSz").textContent = `${spec.tick_size || "—"}`;
+
+  recalculateContractValues();
+}
+
+function recalculateContractValues() {
+  if (!currentContractSpec) return;
+  const lastPrice = currentContractSpec.last_price || 0;
+  const contractSize = currentContractSpec.contract_size || 1;
+  const notionalPerLot = currentContractSpec.notional_per_lot || (contractSize * lastPrice);
+  const minLot = currentContractSpec.volume_min || 0.01;
+  const lotStep = currentContractSpec.volume_step || 0.01;
+
+  if (contractCalcMode === "usdt") {
+    const targetValue = Math.max(0, Number($("inputTargetUsdt").value) || 0);
+    const leverage = Math.max(1, Number($("inputLeverage1").value) || 1);
+
+    if (notionalPerLot > 0 && targetValue > 0) {
+      let lots = Math.floor((targetValue / notionalPerLot) / lotStep) * lotStep;
+      if (lots < minLot) lots = minLot;
+      // 修正浮点精度：按步长位数取整
+      const stepDigits = (String(lotStep).split(".")[1] || "").length;
+      lots = Number(lots.toFixed(stepDigits));
+
+      const actualValue = lots * notionalPerLot;
+      const margin = actualValue / leverage;
+      const units = lots * contractSize;
+
+      $("calcResContracts").textContent = `${lots} 手`;
+      $("calcResActualUsdt").textContent = fmtMoney(actualValue);
+      $("calcResMargin").textContent = fmtMoney(margin);
+      $("calcResCoins").textContent = fmt(units, 4);
+    } else {
+      $("calcResContracts").textContent = "0 手";
+      $("calcResActualUsdt").textContent = "0.00";
+      $("calcResMargin").textContent = "0.00";
+      $("calcResCoins").textContent = "0.00";
+    }
+  } else {
+    const targetLots = Math.max(0, Number($("inputTargetContracts").value) || 0);
+    const leverage = Math.max(1, Number($("inputLeverage2").value) || 1);
+
+    if (targetLots > 0) {
+      const totalValue = targetLots * notionalPerLot;
+      const margin = totalValue / leverage;
+      const units = targetLots * contractSize;
+
+      $("calcResTotalUsdt").textContent = fmtMoney(totalValue);
+      $("calcResMargin2").textContent = fmtMoney(margin);
+      $("calcResCoins2").textContent = fmt(units, 4);
+      $("calcResSingleVal").textContent = fmtMoney(notionalPerLot);
+    } else {
+      $("calcResTotalUsdt").textContent = "0.00";
+      $("calcResMargin2").textContent = "0.00";
+      $("calcResCoins2").textContent = "0.00";
+      $("calcResSingleVal").textContent = "0.00";
+    }
+  }
+}
+
+function renderPopularSpecsList() {
+  const container = $("popularSpecsList");
+  if (!container) return;
+  if (!contractSpecsList.length) {
+    container.innerHTML = `<div class="empty-state">暂无品种数据（请确认 PABridge EA 已连接）</div>`;
+    return;
+  }
+
+  container.innerHTML = contractSpecsList.map((spec) => {
+    const name = spec.description || "";
+    const notional = spec.notional_per_lot || (spec.contract_size * (spec.last_price || 0));
+    return `
+      <div class="spec-row-item" data-inst-id="${escapeHtml(spec.symbol)}" title="点击填入上方换算器">
+        <div class="spec-row-left">
+          <strong>${escapeHtml(spec.symbol)} ${name ? `(${escapeHtml(name)})` : ""}</strong>
+          <small>市价: ${spec.last_price > 0 ? fmt(spec.last_price, 5) : "—"} · 最小 ${spec.volume_min} 手</small>
+        </div>
+        <div class="spec-row-right">
+          <span class="ct-val-badge">1手 = ${fmt(spec.contract_size, 2)} 标的</span>
+          <span class="usdt-val">≈ ${fmtMoney(notional)}</span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function loadContractSpecs(query = "") {
+  const loading = $("popularSpecsLoading");
+  if (loading) loading.hidden = false;
+  try {
+    const url = query ? `/api/contract/specs?symbol=${encodeURIComponent(query)}` : "/api/contract/specs";
+    const data = await api(url);
+    contractSpecsList = data.specs || [];
+    if (loading) loading.hidden = true;
+    renderPopularSpecsList();
+
+    if (contractSpecsList.length) {
+      const searchTarget = (query || $("calcSymbolInput").value || "").trim().toUpperCase();
+      const match = contractSpecsList.find(s => String(s.symbol).toUpperCase() === searchTarget) || contractSpecsList[0];
+      $("calcSymbolInput").value = match.symbol;
+      renderContractSpecCard(match);
+    }
+  } catch (error) {
+    if (loading) {
+      loading.hidden = false;
+      loading.textContent = `加载失败: ${error.message}`;
+    }
+  }
+}
+
+// 换算器交互绑定
+$("calcModeUsdtBtn").addEventListener("click", () => {
+  contractCalcMode = "usdt";
+  $("calcModeUsdtBtn").classList.add("active");
+  $("calcModeContractsBtn").classList.remove("active");
+  $("calcModeUsdtPanel").hidden = false;
+  $("calcModeContractsPanel").hidden = true;
+  recalculateContractValues();
+});
+
+$("calcModeContractsBtn").addEventListener("click", () => {
+  contractCalcMode = "contracts";
+  $("calcModeContractsBtn").classList.add("active");
+  $("calcModeUsdtBtn").classList.remove("active");
+  $("calcModeContractsPanel").hidden = false;
+  $("calcModeUsdtPanel").hidden = true;
+  recalculateContractValues();
+});
+
+$("inputTargetUsdt").addEventListener("input", recalculateContractValues);
+$("inputLeverage1").addEventListener("input", recalculateContractValues);
+$("inputTargetContracts").addEventListener("input", recalculateContractValues);
+$("inputLeverage2").addEventListener("input", recalculateContractValues);
+
+$("calcSymbolSearchBtn").addEventListener("click", () => {
+  loadContractSpecs($("calcSymbolInput").value.trim());
+});
+
+$("calcSymbolInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    loadContractSpecs($("calcSymbolInput").value.trim());
+  }
+});
+
+$("contractRefreshBtn").addEventListener("click", () => {
+  loadContractSpecs($("calcSymbolInput").value.trim());
+});
+
+$("popularSpecsList").addEventListener("click", (e) => {
+  const item = e.target.closest(".spec-row-item");
+  if (!item) return;
+  const instId = item.dataset.instId;
+  const match = contractSpecsList.find(s => s.symbol === instId);
+  if (match) {
+    $("calcSymbolInput").value = match.symbol;
+    renderContractSpecCard(match);
+    toast(`已载入 ${match.symbol} 规格`);
+  }
+});
+
+// ==================== 角色 UI 与登录 / 用户管理 ====================
+function applyRoleUI() {
+  const admin = isAdmin();
+  const badge = $("userBadge");
+  if (currentUser) {
+    badge.hidden = false;
+    badge.textContent = admin
+      ? `👤 ${currentUser.username} · 管理员`
+      : `👤 ${currentUser.username} · 只读`;
+    badge.className = `badge ${admin ? "admin" : "readonly"}`;
+  } else {
+    badge.hidden = true;
+  }
+  $("userMgmtButton").hidden = !admin;
+  $("configButton").hidden = !admin;
+  $("logoutButton").hidden = !currentUser;
+
+  // 只读账号：禁用一切变更控件（服务端中间件同样硬拦截，这里仅优化体验）
+  ["analyzeButton", "executeAfterAnalysis", "automationSwitch", "sessionApply", "cancelAllOrdersBtn", "tradingSystemSelect"]
+    .forEach((id) => { const el = $(id); if (el) el.disabled = !admin; });
+
+  const sp = $("sessionPreset");
+  if (sp) sp.disabled = !admin || sp.dataset.loaded !== "true";
+  ["sessionTimezone", "sessionStart", "sessionEnd"].forEach((id) => { const el = $(id); if (el) el.disabled = !admin; });
+  document.querySelectorAll(".session-weekday").forEach((el) => (el.disabled = !admin));
+}
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("loginError");
+  errEl.hidden = true;
+  try {
+    const res = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: $("loginUsername").value.trim(),
+        password: $("loginPassword").value,
+      }),
+    });
+    currentUser = { username: res.username, role: res.role };
+    $("loginPassword").value = "";
+    hideLoginOverlay();
+    applyRoleUI();
+    bootApp();
+    toast(`欢迎，${res.username}（${res.role === "admin" ? "管理员" : "只读"}）`);
+  } catch (error) {
+    errEl.textContent = error.message;
+    errEl.hidden = false;
+  }
+});
+
+$("logoutButton").addEventListener("click", async () => {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch {}
+  // 重新加载页面，回到登录态
+  location.reload();
+});
+
+// ---------- 用户管理（仅管理员） ----------
+function userMsg(text) {
+  $("userMsg").textContent = text;
+}
+
+function openUserModal() {
+  $("userModal").hidden = false;
+  userMsg("");
+  loadUsers();
+}
+
+function closeUserModal() {
+  $("userModal").hidden = true;
+}
+
+async function loadUsers() {
+  const state = $("userListState");
+  state.hidden = false;
+  state.textContent = "正在读取";
+  try {
+    const res = await api("/api/auth/users");
+    state.hidden = true;
+    renderUserList(res.users || []);
+  } catch (error) {
+    state.textContent = `加载失败: ${error.message}`;
+  }
+}
+
+function renderUserList(users) {
+  const tbody = $("userListBody");
+  tbody.innerHTML = users.map((u) => {
+    const isSelf = currentUser && u.username === currentUser.username;
+    const roleText = u.role === "admin" ? "管理员" : "只读";
+    const actions = isSelf
+      ? `<span class="user-self-tag">当前账号</span>`
+      : `<button class="small-action" data-user-action="reset" data-username="${escapeHtml(u.username)}" type="button">重置密码</button>
+         <button class="small-action danger" data-user-action="delete" data-username="${escapeHtml(u.username)}" type="button">删除</button>`;
+    return `<tr>
+      <td><b>${escapeHtml(u.username)}</b></td>
+      <td>${roleText}</td>
+      <td>${escapeHtml(u.created_at || "—")}</td>
+      <td class="user-actions">${actions}</td>
+    </tr>`;
+  }).join("");
+}
+
+$("userMgmtButton").addEventListener("click", openUserModal);
+$("closeUserBtn").addEventListener("click", closeUserModal);
+$("userModal").addEventListener("click", (e) => {
+  if (e.target === $("userModal")) closeUserModal();
+});
+
+$("userCreateForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/auth/users", {
+      method: "POST",
+      body: JSON.stringify({
+        username: $("newUsername").value.trim(),
+        password: $("newPassword").value,
+        role: $("newUserRole").value,
+      }),
+    });
+    toast("账号已创建");
+    $("newUsername").value = "";
+    $("newPassword").value = "";
+    userMsg("");
+    loadUsers();
+  } catch (error) {
+    userMsg(error.message);
+  }
+});
+
+$("userListBody").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-user-action]");
+  if (!btn) return;
+  const username = btn.dataset.username;
+  if (btn.dataset.userAction === "delete") {
+    if (!confirm(`确定删除账号 ${username}？该账号的登录会话将立即失效。`)) return;
+    try {
+      await api(`/api/auth/users/${encodeURIComponent(username)}`, { method: "DELETE" });
+      toast(`账号 ${username} 已删除`);
+      loadUsers();
+    } catch (error) {
+      userMsg(error.message);
+    }
+  } else if (btn.dataset.userAction === "reset") {
+    const pwd = prompt(`为 ${username} 设置新密码（至少 6 位）：`);
+    if (pwd === null) return;
+    try {
+      await api("/api/auth/users/password", {
+        method: "POST",
+        body: JSON.stringify({ username, new_password: pwd }),
+      });
+      toast(`已重置 ${username} 的密码`);
+    } catch (error) {
+      userMsg(error.message);
+    }
+  }
+});
+
+$("pwdChangeForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const res = await api("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({
+        old_password: $("pwdOld").value,
+        new_password: $("pwdNew").value,
+      }),
+    });
+    toast(res.message || "密码已修改，请重新登录");
+    closeUserModal();
+    setTimeout(() => location.reload(), 1200);
+  } catch (error) {
+    userMsg(error.message);
+  }
+});
+
+// ==================== 启动流程（登录后执行） ====================
+let booted = false;
+
+function bootApp() {
+  if (booted) return;
+  booted = true;
+
+  initUpdownToggle();
+  initEquityToolbar();
+  Promise.all([loadStatus(), loadInstruments(), loadCandles(), loadDecisionHistory(), loadTradeHistory()])
+    .then(async () => {
+      try {
+        const savedSys = localStorage.getItem("mt5_trading_system");
+        if (isAdmin() && savedSys && savedSys !== statusData?.trading_system) {
+          const res = await api("/api/trading_system", {
+            method: "POST",
+            body: JSON.stringify({ trading_system: savedSys }),
+          });
+          statusData = res;
+          currentTradingSystem = res.trading_system || savedSys;
+          updateSystemUI();
+          renderAutomationStatus(res);
+          drawChart();
+        }
+      } catch {}
+
+      // 若尚未配置 AI 或未检测到 .env，自动弹出向导（仅管理员）
+      if (isAdmin() && statusData && (!statusData.is_ai_configured || !statusData.has_env_file)) {
+        openConfigModal();
+      }
+    })
+    .then(() => loadEquityCurve())
+    .catch((error) => toast(error.message));
+
+  setInterval(loadCandles, 30000);
+  setInterval(() => loadStatus().catch((error) => toast(error.message)), 15000);
+  setInterval(() => {
+    if ($("accountTab").classList.contains("active")) {
+      loadAccount(true);
+      loadEquityCurve(true);
+    }
+    if ($("contractTab").classList.contains("active")) loadContractSpecs($("calcSymbolInput").value.trim());
+  }, 60000);
+}
+
+async function initAuth() {
+  try {
+    currentUser = await api("/api/auth/me");
+  } catch {
+    currentUser = null;
+  }
+  applyRoleUI();
+  if (currentUser) {
+    hideLoginOverlay();
+    bootApp();
+  } else {
+    showLoginOverlay();
+  }
+}
+
+initAuth();

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="AUKKvq0HEG9BGCEpdWKhGU">
+<head data-page-node-id="dthTHGDpasT4bVzkHVaR8b">
+<meta charset="UTF-8" data-page-node-id="PFkZj3thQpmXfBCBvE2ylb" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="DzXbhIdOHDYPRopltR0EqN" />
+<title>MT5 2PA Agent 用户手册 v0.4.4</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2933; --muted:#5b6b7b; --line:#e3e8ef;
+    --brand:#b4341f; --brand2:#1f6feb; --ok:#1a7f37; --warn:#9a6700; --card:#f7f9fc;
+    --codebg:#f3f5f9; --shadow:0 1px 3px rgba(16,24,40,.08);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--fg);background:var(--bg);line-height:1.75;font-size:15px}
+  a{color:var(--brand2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{display:flex;max-width:1180px;margin:0 auto}
+  /* sidebar */
+  nav{position:sticky;top:0;align-self:flex-start;height:100vh;overflow:auto;width:248px;flex:0 0 248px;
+    padding:24px 16px;border-right:1px solid var(--line);background:#fbfcfe}
+  nav h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:18px 8px 6px}
+  nav a{display:block;padding:6px 10px;border-radius:8px;color:var(--fg);font-size:14px;margin:2px 0}
+  nav a:hover{background:var(--card);text-decoration:none}
+  /* main */
+  main{flex:1;min-width:0;padding:36px 44px 80px}
+  header.cover{padding:8px 0 24px;border-bottom:3px solid var(--brand);margin-bottom:8px}
+  header.cover .tag{display:inline-block;background:var(--brand);color:#fff;font-size:12px;padding:3px 10px;border-radius:20px;letter-spacing:.04em}
+  header.cover h1{font-size:30px;margin:14px 0 6px;letter-spacing:.01em}
+  header.cover p{color:var(--muted);margin:4px 0}
+  h2{font-size:23px;margin:42px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 8px;color:#233044}
+  h4{font-size:15px;margin:18px 0 6px;color:#324155}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:5px 0}
+  code{background:var(--codebg);padding:2px 6px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:#b4341f}
+  pre{background:#0f1722;color:#e6edf3;padding:16px 18px;border-radius:10px;overflow:auto;font-size:13px;line-height:1.6;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre code{background:none;color:inherit;padding:0}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--card);color:#233044;font-weight:600}
+  tr:nth-child(even) td{background:#fcfdff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:16px 0;box-shadow:var(--shadow)}
+  .note{border-left:4px solid var(--brand2);background:#eef5ff;padding:12px 16px;border-radius:0 10px 10px 0;margin:16px 0}
+  .warn{border-left:4px solid var(--warn);background:#fff7e6;padding:12px 16px;border-radius:0 10px 10px 0;margin:16px 0}
+  .ok{border-left:4px solid var(--ok);background:#ecf8ef;padding:12px 16px;border-radius:0 10px 10px 0;margin:16px 0}
+  .steps{counter-reset:s;list-style:none;padding-left:0;margin:14px 0}
+  .steps>li{position:relative;padding:10px 14px 10px 52px;margin:10px 0;background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .steps>li:before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:50%;transform:translateY(-50%);
+    width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .steps>li b{color:#233044}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}nav{display:none}main{padding:24px}}
+  .pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:20px;background:#eef2f7;color:#475569;margin-right:6px}
+  .pill.exe{background:#eafaf0;color:#1a7f37}
+  .pill.docker{background:#eaf1ff;color:#1f6feb}
+  footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+  .arch{width:100%;height:auto;background:#fbfcfe;border:1px solid var(--line);border-radius:12px;margin:14px 0}
+  .btn{display:inline-block;padding:9px 16px;background:var(--brand);color:#fff;border-radius:8px;font-weight:600;margin:4px 8px 4px 0}
+</style>
+</head>
+<body data-page-node-id="n7RvCsBFrCCp8pFBsgMruF">
+<div class="wrap" data-page-node-id="DuHiHfDlhZgD5sDya2hUUp">
+<nav data-page-node-id="SNFUQ75EjpfE40CxDHCoqv">
+  <h2 data-page-node-id="xucs1FQfXimko29cx20hvy">MT5 2PA Agent</h2>
+  <a href="#top" data-page-node-id="2vgQp7mcE1eRKVFWxpsFZi">封面 / 简介</a>
+  <a href="#arch" data-page-node-id="zQdGaeY1XhRxMfEqKcj2xQ">1. 系统组成</a>
+  <a href="#req" data-page-node-id="1kCav4e03L4tvmKhHUMtTx">2. 环境要求</a>
+  <a href="#exe" data-page-node-id="GIYZW0KjeS1lqaLl2Jde7q">3. EXE 版安装</a>
+  <a href="#docker" data-page-node-id="JIRu688YY1huhSP2sPQnIB">4. Docker 版安装</a>
+  <a href="#ea" data-page-node-id="BfEO5XAB9h35SyZ1mw7KUG">5. PABridge EA 安装</a>
+  <a href="#web" data-page-node-id="t8IbCoDYltGTuXIw0HsUNk">6. Web 控制台</a>
+  <a href="#systems" data-page-node-id="gvKneWX87CYBbmtXhXbKuB">7. 三套交易系统</a>
+  <a href="#config" data-page-node-id="YOEe9GOrqjvCosn1QtlySo">8. 配置参考</a>
+  <a href="#logs" data-page-node-id="oISClwBPSNn75pX8bkQLOa">9. 日志与审计</a>
+  <a href="#faq" data-page-node-id="3XQzc8XYJUxcorCjGZQ9kY">10. 常见问题</a>
+  <a href="#risk" data-page-node-id="Vlyp9TACJWZy7ANrPZwbEt">11. 安全与风险</a>
+  <a href="#rel" data-page-node-id="CHc6E5PoGP7FOF2LI6Vwn1">12. 发行包说明</a>
+</nav>
+
+<main data-page-node-id="8WcxqFraFjJSmCt4ewfRnw">
+<header class="cover" id="top" data-page-node-id="t0DC0ZAPOKVdMw7xxwKUdm">
+  <span class="tag" data-page-node-id="M62F1CFHTwTTG4jMNuTXon">MT5 2PA Agent · v0.4.4</span>
+  <h1 data-page-node-id="5OAw8lUggG9mRLEzUQqhdy">MT5 2PA Agent 用户手册</h1>
+  <p data-page-node-id="urve9c8IUMqLKWTCW40M1N">AI 价格行为交易代理（MetaTrader 5 桥接版）· 适用 <b data-page-node-id="DIAIMDsSCRDF0rTNGdobT5">EXE 版（Windows）</b> 与 <b data-page-node-id="0VDeNGsqiVD7GbpnXShK0s">Docker 版（Linux / NAS）</b></p>
+  <p data-page-node-id="5zaAsPdAP2TtjDgmLl75Yd">本手册随发行包附带，如有更新以最新包内版本为准。</p>
+</header>
+
+<div class="ok" data-page-node-id="AKeAvIbL4UW3OODeE7I9f4">
+<b data-page-node-id="Bjk8rnqekOFePLGJ8NJtjR">一句话概括：</b>MT5 2PA Agent 自动拉取 MT5 行情 → 计算 EMA/ATR/SMA 指标与 K 线几何特征 → 两阶段调用大模型（市场诊断 + 交易决策）→ 风控校验后，通过 <b data-page-node-id="JesiyOiSCmzK4DMZeBjjkk">PABridge EA</b> 在 MT5 中自动下单，并提供 Web 控制台实时查看与管理。
+</div>
+
+<h2 id="arch" data-page-node-id="9lZjMqh7WZe4zSTtrdTRcO">1. 系统组成</h2>
+<p data-page-node-id="Qvzw6uZca9WMxkbCh2nGvU">系统由<b data-page-node-id="f9OZoJ3VuQSnHe5VudNGCt">两部分</b>组成，二者通过 HTTP 通信：</p>
+<svg class="arch" viewBox="0 0 920 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="系统架构图" data-page-node-id="RpCtx1kqeACDjANdULpsM7">
+  <defs data-page-node-id="4ZoRNbTiulyGBwtoRKNDGa">
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth" data-page-node-id="EjANZ194gqt3rcg6QLfEwd">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5b6b7b" data-page-node-id="439swkva3qsAoSe3Uopd5S"/>
+    </marker>
+  </defs>
+  <rect x="30" y="40" width="360" height="180" rx="12" fill="#fff4f1" stroke="#b4341f" stroke-width="2" data-page-node-id="x1WCsJsCYDk31N8vnCBQML"/>
+  <text x="210" y="70" text-anchor="middle" font-size="16" font-weight="700" fill="#b4341f" data-page-node-id="tERXXkolJF3QTUXwCpzS1F">MT5 终端（Windows）</text>
+  <text x="210" y="100" text-anchor="middle" font-size="14" fill="#233044" data-page-node-id="SbtZAEZ5z2jg41be2SdLxG">MetaTrader 5</text>
+  <text x="210" y="128" text-anchor="middle" font-size="14" fill="#233044" data-page-node-id="IZP1fYbnvfRFvVETBtvHIF">+ PABridge EA（PABridge.ex5）</text>
+  <text x="210" y="158" text-anchor="middle" font-size="12.5" fill="#5b6b7b" data-page-node-id="AjHhRYjD8Ph8eguqCZcICf">上报行情 / 账户 / 持仓 / 规格</text>
+  <text x="210" y="180" text-anchor="middle" font-size="12.5" fill="#5b6b7b" data-page-node-id="5IpHDc22U3X8gIOxgW232M">领取并执行交易指令</text>
+
+  <rect x="530" y="40" width="360" height="180" rx="12" fill="#eef5ff" stroke="#1f6feb" stroke-width="2" data-page-node-id="93XBZEGhfkV4SxYGaSdbwk"/>
+  <text x="710" y="70" text-anchor="middle" font-size="16" font-weight="700" fill="#1f6feb" data-page-node-id="iEVGfFNS0gvgFj3TRJdqBu">2PA Agent 代理</text>
+  <text x="710" y="100" text-anchor="middle" font-size="14" fill="#233044" data-page-node-id="MZ8aWkT4W8rfGvE0wj8nAI">exe 或 Docker 容器</text>
+  <text x="710" y="128" text-anchor="middle" font-size="14" fill="#233044" data-page-node-id="aDxeWKdCqAkh5PtKA5hkAF">Web 控制台 :8066</text>
+  <text x="710" y="158" text-anchor="middle" font-size="12.5" fill="#5b6b7b" data-page-node-id="lKUz9NLfw1fDGN0B1XalIP">指标计算 + 两阶段 LLM 推理</text>
+  <text x="710" y="180" text-anchor="middle" font-size="12.5" fill="#5b6b7b" data-page-node-id="S6bBwOl31IzZIOKJAJyC0J">风控校验 + 指令生成</text>
+
+  <line x1="390" y1="130" x2="528" y2="130" stroke="#5b6b7b" stroke-width="2" marker-end="url(#ar)" data-page-node-id="ax4Zj0dYwt5R7bvFHiHDcw"/>
+  <line x1="528" y1="100" x2="390" y2="100" stroke="#5b6b7b" stroke-width="2" marker-end="url(#ar)" data-page-node-id="jiHoEquQiZDlibXzZijWR8"/>
+  <text x="459" y="92" text-anchor="middle" font-size="11.5" fill="#5b6b7b" data-page-node-id="KFvB6YylmBgxZabpWa0RJ2">指令 A2T</text>
+  <text x="459" y="152" text-anchor="middle" font-size="11.5" fill="#5b6b7b" data-page-node-id="bYT5OadMFiKMGS3ir8f15N">状态 T2A（每秒）</text>
+
+  <rect x="300" y="232" width="320" height="20" rx="6" fill="#f3f5f9" stroke="#e3e8ef" data-page-node-id="NtY7NgWP77DIPIbheuounL"/>
+  <text x="460" y="246" text-anchor="middle" font-size="12" fill="#5b6b7b" data-page-node-id="xBJIBEnXNxboZGBHRpTiIl">HTTPS → LLM 大模型（DeepSeek 等 OpenAI 兼容接口）</text>
+</svg>
+<ul data-page-node-id="jJJJXq49d3SoNqdivCpdsH">
+  <li data-page-node-id="eWE7BgsDkrC7zSlw961UGv"><b data-page-node-id="wjcQFJ9oDEHG85U2eHRDJp">MT5 终端 + PABridge EA</b>：必须运行在 Windows（MT5 无法装入 Docker），负责行情上报与实际下单。</li>
+  <li data-page-node-id="ApgUDZ4vqqFDUhBNG9PFg9"><b data-page-node-id="4d8S8RI9OO38kYLo3vOgOP">2PA Agent 代理</b>：核心程序，EXE 版跑在 Windows，Docker 版可跑在 NAS / 服务器；提供 Web 控制台（默认端口 <code data-page-node-id="5TOvPIWDKvP64aIFnEhB2W">8066</code>）。</li>
+  <li data-page-node-id="sLFqEofwv9KA11GZRElukw"><b data-page-node-id="WD3BMRDEMH5mESViOt26Wr">LLM 大模型</b>：需要一个 OpenAI 兼容接口的 API Key（默认 DeepSeek）。</li>
+</ul>
+<div class="note" data-page-node-id="JsZvIW101boLFpNX9Cv7kg"><b data-page-node-id="ZLs13yYj3f0yGTvOV44APX">EXE 版与 Docker 版功能完全相同，二选一即可。</b>代理与 MT5 可以在同一台电脑，也可以分属两台机器（同一局域网 / 跨机器需网络互通）。</div>
+
+<h2 id="req" data-page-node-id="rSKp27CKaAjWQfAt0QzgHP">2. 环境要求</h2>
+<table data-page-node-id="wC2494alZm9JolWyA4lpSD">
+  <tr data-page-node-id="lQiFsQDXPpopGDKn2WamJ3"><th data-page-node-id="AIsmSGQ82ZNeXufLQjDU7e">项目</th><th data-page-node-id="EnA4zzD5uFKIMciQzGAqEH">要求</th></tr>
+  <tr data-page-node-id="Yb4fNUPmFANYvda0m1VZQa"><td data-page-node-id="85sfcmLStyXBm8yLwmSQtU">MT5 终端</td><td data-page-node-id="mYnlDnHROWBMCev6NWDV0g">Windows 7 及以上，已登录任一账户（建议先用模拟盘）</td></tr>
+  <tr data-page-node-id="pA7flJAEkrW5STxGTFHtPd"><td data-page-node-id="JzsiqT3ixFNn3VR6eiMCnV">代理（EXE 版）</td><td data-page-node-id="LLlkcAdL15K98xwybdYCa0">Windows 10/11 x64，无需安装任何运行库，解压即用</td></tr>
+  <tr data-page-node-id="AGpCUsf846hGeF4DOLCM0C"><td data-page-node-id="oV9UbL998AgNJwudkkTF3k">代理（Docker 版）</td><td data-page-node-id="Ho1nd1SaXy8EJfRREhrllH">Docker 20+ 与 Docker Compose v2（飞牛 NAS、群晖、Linux 服务器均可）</td></tr>
+  <tr data-page-node-id="SMNz2Dl3YnxcSX52wbhp3v"><td data-page-node-id="qB0exCC16JSDo9FArWUQgi">LLM 密钥</td><td data-page-node-id="Lcla6YPdtvcSDDHhUgyJRI">DeepSeek / OpenAI / 其他 OpenAI 兼容服务的 API Key</td></tr>
+  <tr data-page-node-id="0qMZoNpFq6rBsXNKJ4hCXi"><td data-page-node-id="lD1xpM7vVknk4DB9LjlMYY">网络</td><td data-page-node-id="G1JsSuOThITUOLSGbyvQAC">EA 与代理之间能互通 8066 端口；代理能访问 LLM 服务</td></tr>
+</table>
+
+<h2 id="exe" data-page-node-id="TuAS0bsnEst8gaJgg8vB4s">3. 安装 —— EXE 版（Windows）</h2>
+<span class="pill exe" data-page-node-id="cQG2IiHKCuUQQKRz7YBeGA">推荐新手</span><span class="pill" data-page-node-id="09BZwsbquB47FkRSVwlDN1">无需编译</span>
+<h3 data-page-node-id="EViypCWLxRLc6yz6Waw7fC">第 1 步：解压</h3>
+<p data-page-node-id="PgEOpQgfg06BDXYKXf4Zin">将 <code data-page-node-id="QGxEPZT4MESBSHcRacMnro">mt5-2pa-agent-v0.4.4-20260911-1145-win64.zip</code> 解压到任意目录（<b data-page-node-id="DsboSI7GwTlN2JWr2qtwxm">建议路径不含中文和空格</b>，如 <code data-page-node-id="22ovF485xSEEpEu0AUd92Y">D:\mt5-2pa-agent</code>）。解压后目录结构：</p>
+<pre data-page-node-id="Ze0fRoYJs2XLWpAksox4GH"><code data-page-node-id="kyeBiNGBbUHxdE28pSme5t">mt5-2pa-agent-v0.4.4-20260911-1145-win64\
+├── mt5-2pa-agent.exe       主程序（已编译，双击即运行）
+├── 启动服务.bat            一键启动脚本
+├── 免费AI注册.txt          LLM 密钥获取指引
+├── .env.example           配置模板（首次使用复制为 .env）
+├── config\                配置目录（settings.example.json）
+├── mql5\PABridge.ex5      MT5 端 EA（已编译，直接放进 MT5）
+├── experience\            交易经验库（必须保留）
+├── prompt_engineering\    AI 策略提示词（必须保留）
+└── docs\用户手册.html      本手册（及 用户手册.md）</code></pre>
+
+<h3 data-page-node-id="JMkSjkBZ4uzVAieXte8TxN">第 2 步：配置 LLM 密钥</h3>
+<p data-page-node-id="os2VR0AeKt2CGyzvlyki7T">把 <code data-page-node-id="D75AHeHxjehCeL57fJIC1X">.env.example</code> 复制一份并重命名为 <code data-page-node-id="B9rO8PKiq49OLFB8LUaJW5">.env</code>，用记事本打开，至少填写：</p>
+<pre data-page-node-id="s8gTmx35zAJfMhiMGKVdmZ"><code data-page-node-id="QKKIUi1Vgt8J3umv71Uhk5">LLM_API_KEY=sk-你的密钥
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash</code></pre>
+<div class="note" data-page-node-id="ODffTc0KS5VFTxXCo25N04">也可以跳过此步，首次启动后在 Web 控制台的<b data-page-node-id="jXxrzdIZj2DcFVcHfO2eAM">配置向导</b>里填写（自动保存进 <code data-page-node-id="5JzdTQ1oyg3sajNJWAGEmE">.env</code> 并热加载）。详见 <a href="#web" data-page-node-id="ITZHWzQ3YQpVvyLnN1UwMv">第 6 节</a>。</div>
+
+<h3 data-page-node-id="Tb9eG1GRMGgvMMWP0glDZn">第 3 步：启动</h3>
+<p data-page-node-id="1EtrWm2snz3F9eokRfFFuc">双击 <code data-page-node-id="PQCEEnbBkd5c0U32wmoHms">启动服务.bat</code>，看到服务启动信息后，浏览器打开 <code data-page-node-id="rxFJrFXy6BvtiHxDUbR2Dg">http://127.0.0.1:8066</code>。</p>
+<h3 data-page-node-id="d0KRHinoDqGUTRvpxHsqXo">第 4 步：安装 PABridge EA</h3>
+<p data-page-node-id="MLTPXattw97jD7vCGhepzJ">见 <a href="#ea" data-page-node-id="nZgGJnGBqHEnsRwHeS5cPV">第 5 节</a>。EA 连通后，控制台右上角桥接状态变绿即部署完成。</p>
+
+<h2 id="docker" data-page-node-id="hIcZPA0YHFuBnKRclQTkVB">4. 安装 —— Docker 版（NAS / 服务器）</h2>
+<span class="pill docker" data-page-node-id="8IcTIUf5ZVfLWXYskdMjdu">适合 7×24</span><span class="pill" data-page-node-id="eoQhVRBILgDCVwtUy9Tusz">首次构建 10~40 分钟</span>
+<p data-page-node-id="obWTMGdyW80zCZwNeYanYO">本版发行包内含完整源码，由 Docker 在容器内完成 Rust 编译。核心流程（详细步骤见包内 <code data-page-node-id="5MboGIUgqrBsQHGehU6kD0">docs/DOCKER部署指南.md</code>）：</p>
+<pre data-page-node-id="PQfN1cM1baTHK1HGs447ZC"><code data-page-node-id="dtKysBgniAZTcBSvcmFBNv"># 1. 解压源码包并进入目录
+tar xzf mt5-2pa-agent-v0.4.4-20260911-1145-docker.tar.gz
+cd mt5-2pa-agent
+
+# 2. 生成配置（务必修改桥接令牌为强随机值）
+cp .env.example .env
+chmod 600 .env
+vi .env    # 填写 LLM_API_KEY，设置强随机的 MT5_BRIDGE_TOKEN
+
+# 3. 构建并启动（首次构建约 10~40 分钟）
+docker compose up -d --build
+
+# 4. 验证
+curl http://127.0.0.1:8066/        # 返回页面即成功
+docker compose logs -f             # 查看运行日志</code></pre>
+<div class="warn" data-page-node-id="VUKdGXuKodJSVNnfwLk7JC"><b data-page-node-id="FT8Fw18DFv0BQkpLFJX1A8">Docker 版两点注意：</b>
+<ol data-page-node-id="fqLE76GV3mpDOQAFd9pyvW">
+  <li data-page-node-id="Ls1c7au7RdopHmiut0UWKg">监听地址是 <code data-page-node-id="Rvddjqq6pElbEoFAYCELwi">0.0.0.0:8066</code>（EA 从外部访问）。若在公网服务器部署，务必设置强随机的 <code data-page-node-id="KNZVJuszRBsXSHVFaqEq7R">MT5_BRIDGE_TOKEN</code>，并用防火墙 / 安全组限制 8066 端口的来源 IP。</li>
+  <li data-page-node-id="tzy2u4BJzdppzuqQLLiBDf">EA 里的 <code data-page-node-id="sBsaQPTZmuzJz0ckZLnEhw">BridgeUrl</code> 要填<b data-page-node-id="xwt9IVZZf7NhLwxdUZvht9">代理机器的 IP</b>（如 <code data-page-node-id="l5kQ6fZ2hVJE5Moxg9M7Tg">http://192.168.1.100:8066/bridge/sync</code>），不能填 127.0.0.1（除非 EA 与容器在同一台机器）。</li>
+</ol></div>
+
+<h2 id="ea" data-page-node-id="dk9ozF5zQ2YH4Gm5H0Ubiq">5. PABridge EA 安装与配置（MT5 端）</h2>
+<div class="ok" data-page-node-id="prNv8MYHx8dvHS0RqLnIc1">发行包提供的是<b data-page-node-id="VIiJHhzXGJeyin8qZiJPK0">已编译好的 <code data-page-node-id="qntmAY8I6QLYZx9A1PCvIs">PABridge.ex5</code></b>，<b data-page-node-id="EzcopjGJM8DDGokwNlK3yD">无需在 MetaEditor 中编译</b>，直接放入 MT5 即可使用。</div>
+<ol class="steps" data-page-node-id="ZXKLlo8Vfu4Rc7IzZBAPK6">
+  <li data-page-node-id="pxWBtfAGlR6kfxXtW4yvAO"><b data-page-node-id="I5kpydFW2wCa6965iJt5OP">放入 EA 文件</b>：MT5 → 文件 → 打开数据文件夹 → 进入 <code data-page-node-id="EgLrZYzI14FudUYQHAdyBI">MQL5\Experts\</code>，把发行包里的 <code data-page-node-id="p4tXaFpVK7dETYKZivUHYF">mql5\PABridge.ex5</code> 复制进去。</li>
+  <li data-page-node-id="CGLZ9C0H0UsVlJ7jglkQAJ"><b data-page-node-id="Oo3qoYiPfNetCGDNLzSCrt">允许 WebRequest（必做）</b>：MT5 → 工具 → 选项 → <b data-page-node-id="peUzNJtetB0UosBv1F7yBR">EA 交易</b> → 勾选"允许算法交易"，并在 <b data-page-node-id="doVlYKgEFjpujw6cmIcH5B">WebRequest 允许的 URL</b> 中添加：
+    <ul data-page-node-id="XR7p8pLF5c6477pVgZlzpf">
+      <li data-page-node-id="ow5DcNvu4gyyZDuJVLVnA9">EXE 版（同机）：<code data-page-node-id="4qHTlP5usjC8jK6w3bnfqh">http://127.0.0.1:8066</code></li>
+      <li data-page-node-id="KhBxbKHKslqtGwb2ffSqTW">Docker 版（跨机）：<code data-page-node-id="6ErsD5qNcfH2DoWrx3ecqX">http://代理机器IP:8066</code></li>
+    </ul>
+    <span class="note" style="margin-top:8px" data-page-node-id="iJQRCzByC019XAczQcaGuW">注意：添加的 URL <b data-page-node-id="prT7YSf7zHOKzdeOxCrUIf">不带</b> <code data-page-node-id="UxvLTAEGGkUh16HljldLox">/bridge/sync</code> 路径，只需到端口即可。</span>
+  </li>
+  <li data-page-node-id="Nf2UL2D8XUFdrHX0RuW068"><b data-page-node-id="PY4BCBlEgaNBssolFA4EPM">挂载 EA</b>：把"导航器 → 智能交易系统"里的 PABridge 拖到任意一张图表（如 XAUUSD M15），在"输入"标签页按参数表填写，勾选"允许算法交易"后确定。</li>
+  <li data-page-node-id="Ff4UP8X4D0B5UnrhdOHqhd"><b data-page-node-id="ZgzA2FHWbUHlqtL20e78Ux">确认连通</b>：图表左上角出现桥接状态注释、Web 控制台右上角桥接状态变绿，即部署完成。</li>
+</ol>
+
+<h3 data-page-node-id="Ki9KxYoCBbt8ZXOittzipG">EA 输入参数</h3>
+<table data-page-node-id="pN3iVWJZsch0TqwCgQjGOu">
+  <tr data-page-node-id="wGULsf237QIAwxz8ZZAi2J"><th data-page-node-id="gGoK1JtUEDy0Dy0Oa9VAgk">参数</th><th data-page-node-id="nFQCqYQEKXywn8GWGd2dBq">默认</th><th data-page-node-id="5Ha0oFf6KUGiS4M4iFe3tq">说明 / 填写</th></tr>
+  <tr data-page-node-id="vBc9zIwBMuodldR44l8mLS"><td data-page-node-id="34e2PgYOI6TBLLhPXjkDgX"><code data-page-node-id="ssEs03FaH3NIaZQRfA9J0r">BridgeUrl</code></td><td data-page-node-id="GrbeGIvPdbFagkCjvzVrwn"><code data-page-node-id="NZpsXadJzTGTSohdhHuYcq">http://127.0.0.1:8066/bridge/sync</code></td><td data-page-node-id="MGoPY5yGgsaZv4xwnRTN5A">代理的桥接端点。EXE 版同机填默认；Docker 版填 <code data-page-node-id="ON2k28wDnanOiqkYoJxrS8">http://代理IP:8066/bridge/sync</code></td></tr>
+  <tr data-page-node-id="66DysjzhzfWZSFSDMSZgI1"><td data-page-node-id="oDpkrxTtraAkD3RmGzqM2F"><code data-page-node-id="LQSRBNm348X4k8bsjXGVXM">BridgeToken</code></td><td data-page-node-id="VswKOzcOokSUhioR3NFIta">空</td><td data-page-node-id="gLqCNMmICuQY9IwzTUbJ7V">桥接令牌，须与 <code data-page-node-id="rGnJ7kLBCQYKMxHRz59oPm">.env</code> 的 <code data-page-node-id="dBAF1ScciDqBAH9gG4WtbE">MT5_BRIDGE_TOKEN</code> 一致；留空表示不校验（仅建议本机监听时留空）</td></tr>
+  <tr data-page-node-id="mLxmpvWHglFuofQQhEg8oP"><td data-page-node-id="WPGGnnls1HXpudEu2pMbfw"><code data-page-node-id="DZt0tsHpJPcTcguBlw7s4x">PollMs</code></td><td data-page-node-id="YollRjzHytFilgLabEe95t"><code data-page-node-id="EIF0gWYt8Bs7eSgHoiVDPY">1000</code></td><td data-page-node-id="kQNF4EQLE5JsVtCTDUXnc0">轮询间隔（毫秒），≥200。默认 1 秒上报一次</td></tr>
+  <tr data-page-node-id="UHRagvVxCZzTtAwPya8e11"><td data-page-node-id="kYQ5vigVWYQOdbEEaUd2rX"><code data-page-node-id="pkbygYmuLZmNaz20YGUCVj">MagicNumber</code></td><td data-page-node-id="KKF22KfiO1DImwNqLBeK9s"><code data-page-node-id="Olf1x6hwrXH7Sqx76zlwdo">20260907</code></td><td data-page-node-id="cqR0PCrZjG74bv1vb87iKx">魔术号，须与 <code data-page-node-id="91oVbALYMrUFWsFra8N0NQ">.env</code> 的 <code data-page-node-id="42hNWTj8b9zLgy36tm4y49">MT5_MAGIC_NUMBER</code> 一致；代理只管理自己魔术号的单</td></tr>
+  <tr data-page-node-id="wWnf8gs0RiYJej2q21a503"><td data-page-node-id="ucSdgtzN1C9xrXCajWtENK"><code data-page-node-id="Hb896otSZLdtY0rPRZIOXS">Watchlist</code></td><td data-page-node-id="iEe21xYWuy97W5aalDQCwG"><code data-page-node-id="02ElPOlPsc16cTM5LSWnmh">XAUUSD</code></td><td data-page-node-id="d2yZdxfesppmXjlqk2ZR5j">初始监控品种（逗号分隔；界面查询其它品种会自动动态订阅）</td></tr>
+  <tr data-page-node-id="F2BqvgPcHxUV8fN84m5DPG"><td data-page-node-id="JCmu9gGrobh9SmDCXn6FDd"><code data-page-node-id="KIJfEAvmv6kxGsnJz4UIWl">WatchTfs</code></td><td data-page-node-id="9TUY3ZHwCv0KAAsFK45yLE"><code data-page-node-id="rFmcbMVzXrAQKrShQAjvQR">M15</code></td><td data-page-node-id="Nt4u8cIAqnkLuE38ElUDGp">初始监控周期（如 <code data-page-node-id="drSAOqe3xGyLwx3pOfR40C">M5,M15,H1</code>）</td></tr>
+  <tr data-page-node-id="kD7lI5Fl2ITu5G7fIxCulv"><td data-page-node-id="sjf7TnNW6dHtViSRhF8ayq"><code data-page-node-id="xWlG7XTHAG3PThQ0tDhdkP">BarsToSync</code></td><td data-page-node-id="RC5AdmXt711AqCnXKrfO5s"><code data-page-node-id="IMbXarUlEB4g8L4juT4sSd">400</code></td><td data-page-node-id="PLhd8wzzUbk42W2FPdeotA">每个系列同步 K 线数（≤1000，分析需要 ≥300）</td></tr>
+  <tr data-page-node-id="RWFlvZxDpBK6favW1HssGW"><td data-page-node-id="A8Deuvci6CS040eAF3qPVt"><code data-page-node-id="xBhXX73F9vsT0rxv21djMP">WebTimeoutMs</code></td><td data-page-node-id="eRtssOFezWDkoOCh5hMEaV"><code data-page-node-id="FOlBllb6Gi13HVgwbUgUu3">4000</code></td><td data-page-node-id="KFB9PWGokzsb51UIZqkQYC">WebRequest 超时（毫秒）</td></tr>
+  <tr data-page-node-id="LmwhalsQzFhusJTNOEP1h6"><td data-page-node-id="DrWNTdLuv1TKoiqHUxu3Cc"><code data-page-node-id="NnnwwXWA0N33RGsaHBWqLG">VerboseLog</code></td><td data-page-node-id="LNIqaYuNnOpvitOAla1btE"><code data-page-node-id="6yKWxkKtKwlJ18JLrBdBF4">false</code></td><td data-page-node-id="QwSileLEZu20DphiyFCwKO">详细日志开关；排障时打开，日志见 MT5"专家"标签页</td></tr>
+</table>
+<div class="note" data-page-node-id="kK41aE49CxlCyTYFmrneVe"><b data-page-node-id="l5MCFYp72RuGSTZQ5TICv5">品种名与经纪商后缀：</b>MT5 品种名区分大小写，部分经纪商带后缀（如 Exness 的 <code data-page-node-id="DZn6nbSI1RQ2aLiRu2SFBu">XAUUSDm</code>）。代理端会对 EA 上报的规范名做<b data-page-node-id="zrY2IK9JXogmsgVInR0cTm">大小写不敏感的自动解析</b>——界面输入 <code data-page-node-id="Y5PANzo3SoymX5FB87MnA1">XAUUSDM</code> / <code data-page-node-id="IAzMGZEww7ElzQytapZCZU">xauusdm</code> / <code data-page-node-id="1yndwB3hhhE4xlT2yc4yYB">XAUUSDm</code> 都能命中，下单自动使用终端规范名。请确保 EA 的 <code data-page-node-id="y1kGBrEF9ac2dDYAdMUco9">Watchlist</code> 品种确实存在于当前终端"市场报价"窗口。</div>
+
+<h2 id="web" data-page-node-id="3w2MsDlvexyE4OsFodJlbs">6. Web 控制台使用</h2>
+<p data-page-node-id="jPvBbrm0otFecetANQRxZf">浏览器打开 <code data-page-node-id="VVahi7kUKakqt8tYQv6ONT">http://127.0.0.1:8066</code>（或 <code data-page-node-id="Yy0mRzR3QniuSASmCU8ikN">http://代理IP:8066</code>）。</p>
+<table data-page-node-id="uAPBvzN2QtQLKZ2DpUFYAV">
+  <tr data-page-node-id="0pAU7iIXoNU13mWXPXyha1"><th data-page-node-id="gyEWt6hlOZnAMNXhLw9j2g">区域</th><th data-page-node-id="ijp0mCzDfKBC741w4bsFTS">功能</th></tr>
+  <tr data-page-node-id="5rGIpRpS97rCu0MvPqgd1K"><td data-page-node-id="NYG47NnaUqNuThgUsSqLV2">顶栏</td><td data-page-node-id="HxAhXVX5zJKImIrQmBJTCD">桥接连接状态（绿=EA 正常同步）、运行模式（DEMO / LIVE，由 MT5 账户类型自动识别）</td></tr>
+  <tr data-page-node-id="gnc9kfofBTnK4EaveirnYS"><td data-page-node-id="2MbAJZRBroFXi49hORd2xU">K 线图</td><td data-page-node-id="nbXTmB2Q4d7kEkqIogETcV">实时行情（数据由 EA 推送），可切换周期、双系统均线叠加</td></tr>
+  <tr data-page-node-id="CpbnbeesZ2GtHwH5sBZs43"><td data-page-node-id="XY8Y89torSCKYQzSOFFMZG">分析面板</td><td data-page-node-id="rdg3GBjZyo3ZkMIRwIruXq">手动触发一次 AI 分析，查看两阶段推理结果（市场诊断 + 交易决策）</td></tr>
+  <tr data-page-node-id="F1NzKvCnX4p01smkVg4qW2"><td data-page-node-id="PUP0MeB0RNHGASUrmABOiI">自动交易</td><td data-page-node-id="Un8LVRT3SvyGcrdgtnrSLh">开启 / 关闭自动交易、选择交易系统与品种周期、设置交易时段</td></tr>
+  <tr data-page-node-id="B2MMc8suJrbAqX4bxHPKkV"><td data-page-node-id="7CYF8CH8suVN1SgvoeOCEC">账户</td><td data-page-node-id="wKgDOfU7QzJQTm0vbMy0we">余额、净值、持仓与挂单列表；支持手动平仓 / 撤单（只操作本代理魔术号的单）</td></tr>
+  <tr data-page-node-id="VRehSLjydQeDDiRKWChCq6"><td data-page-node-id="plGhML9vO5oobX88j10sM7">历史</td><td data-page-node-id="NAk3USBtUsgi6MdbKJSbqh">历史决策记录与交易审计查询</td></tr>
+  <tr data-page-node-id="TRdYQHqWhqbCBjShdiD9KN"><td data-page-node-id="3275wMzduGT1sBlC7M2dKF">配置</td><td data-page-node-id="4LNBVxRvf0MbcjpQRvN7f5">配置向导（保存到 <code data-page-node-id="x6uqAPg7sSzB8NPGsPiuGS">.env</code> 并热加载）</td></tr>
+</table>
+<h3>登录与账号权限</h3>
+<p>控制台自带账号体系，打开页面需先登录：</p>
+<ul>
+  <li><b>首次启动自动创建两个内置账号</b>：管理员 <code>admin / admin123</code> 与只读 <code>viewer / viewer123</code>（可用 <code>.env</code> 的 <code>WEB_ADMIN_USERNAME / WEB_ADMIN_PASSWORD / WEB_VIEWER_USERNAME / WEB_VIEWER_PASSWORD</code> 覆盖，仅在账号文件 <code>config/users.json</code> 不存在时生效）。<b>默认密码务必登录后立即修改！</b></li>
+  <li><b>管理员</b>：全部权限（运行 AI 分析、自动交易、系统配置、撤单、删除记录、用户管理）。</li>
+  <li><b>只读账号</b>：仅可查看行情、账户、决策与交易历史；所有写操作（含绕过界面直接调用 API）都会被服务端拦截并返回 403，防止"界面隐藏但接口裸奔"的漏洞。</li>
+  <li><b>用户管理</b>：管理员在顶栏「👥 用户管理」中添加 / 删除账号、重置密码、修改自己的密码（系统至少保留一个管理员，不能删除当前登录账号）。</li>
+  <li><b>安全机制</b>：口令以「盐 + 1 万轮 SHA-256」哈希存于 <code>config/users.json</code>（不存明文）；会话为 12 小时 HttpOnly Cookie；同一账号连续失败 5 次锁定 5 分钟；删除用户 / 修改密码会立即吊销其全部登录会话。</li>
+</ul>
+<h3>涨跌配色切换（顶栏）</h3>
+<p>顶栏「模拟交易 / 实盘交易」徽标左侧有一个配色切换按钮，可在 <b>红涨绿跌</b>（默认，国内习惯）与 <b>绿涨红跌</b>（国际惯例）之间一键切换：</p>
+<ul>
+  <li>选择保存在浏览器本地（<code>localStorage</code> 键 <code>mt5_updown</code>），刷新 / 重新登录后保持；只影响当前浏览器，不改变服务端配置。</li>
+  <li>切换立即作用于：K 线蜡烛、盈亏数值、AI 决策方向（做多 / 做空）、侧栏与历史记录方向、周期涨跌幅、权益曲线浮盈带与悬停气泡。</li>
+  <li><b>净值线保持蓝色身份色</b>，不随涨跌配色变化——避免"绿色净值线在红涨绿跌下被误读成下跌"。</li>
+  <li><b>品牌色固定不变</b>：主按钮、品牌方块、徽标、开关、输入框焦点环始终为绿色，与涨跌语义无关。</li>
+</ul>
+<h3>总权益曲线（账户页）</h3>
+<p>「账户」页的<b>总权益曲线</b>记录账户净值随时间的变化：代理每 <b>60 秒自动采样一次</b>（总权益 / 余额 / 浮动盈亏），按天持久化保存于 <code>records/equity/</code> 目录，重启后自动回填，曲线支持：</p>
+<ul>
+  <li><b>快捷时间段</b>：1 时 / 24 时 / 7 天 / 30 天 / 全部；</li>
+  <li><b>自定义起止</b>：用日期时间控件选择任意起止时刻后点「查询」；</li>
+  <li>曲线按时间比例绘制，长区间自动降采样（服务端最多返回 160 点），停机 / 断线时段曲线自然断开。</li>
+  <li><b>双线含义</b>：<b>净值</b>（蓝色实线，随持仓盈亏连续变化）与<b>余额</b>（灰色阶梯线，仅在平仓 / 出入金时跳变），两线之间填充的色带就是<b>浮动盈亏</b>——持仓期间两线张开，平仓瞬间余额跳一级、两线重新贴合。鼠标悬停可查看该时刻的净值 / 余额 / 浮盈气泡。</li>
+  <li><b>收益率百分比</b>：以<b>所选区间第一个采样点的权益为基准</b>（即区间起点为 0%），标题栏显示该区间总收益率，右侧金额刻度下方同步标注对应的百分比；图中虚线即 0% 基准线。切换时间段时 0% 会跟着移动，因此不同区间的收益率不可直接横向比较。</li>
+</ul>
+<div class="note"><b>注意：</b>曲线数据从代理部署运行时开始积累，之前的历史无法回补；EA 未连接期间不采样。</div>
+<h3>开启自动交易的安全确认</h3>
+<p data-page-node-id="Ke26mPDd04VvzdhAOdutAs">首次在实盘账户开启时，控制台会要求确认：模拟账户输入 <code data-page-node-id="ICAw7eRXRkI2lepRHsMFaA">ENABLE DEMO</code>、实盘账户输入 <code data-page-node-id="HPgmVicr9xPMJNjzNW4Nce">ENABLE LIVE</code>。<code data-page-node-id="kTCTLt41bq65kFfZGHri9K">.env</code> 中 <code data-page-node-id="oYjTHNUpKaLUtCcWtf7hXj">MT5_LIVE_TRADING_ACKNOWLEDGED=true</code> 表示已知悉实盘风险。</p>
+<div class="warn" data-page-node-id="iTfxcESEpkHM4uOt2Q3VBt"><b data-page-node-id="nka2uBz5nN3mPcwUMsT7R2">建议流程：</b>先在 Web 控制台手动点几次"分析"，确认 LLM 能正常返回、风控校验通过，并在<b data-page-node-id="yV4Mbke4mzMApBE1t3LtkE">模拟账户</b>上跑几天观察，再考虑接入实盘。</div>
+
+<h2 id="systems" data-page-node-id="BECiDMjEnc9F6IM3pMQnNv">7. 三套交易系统</h2>
+<p data-page-node-id="Ydfp4mCunZsZMa5zAzGTVA">在自动交易设置或 <code data-page-node-id="bBaXjV9FmrsUI7BICDdDvm">.env</code> 的 <code data-page-node-id="gFSBWVqfZAlaqLVOVkdvRC">TRADING_SYSTEM</code> 中选择：</p>
+<table data-page-node-id="A9YTwXFzELPn78HWouuSzb">
+  <tr data-page-node-id="3IGXQKlCdee3I5RHxaZW5B"><th data-page-node-id="EEhH0d4YKo83atyPiPW2T7">系统</th><th data-page-node-id="OwZgVdsL630PdqfeDFIcua">说明</th></tr>
+  <tr data-page-node-id="v3ugzBh7OFGHajk7AdBO37"><td data-page-node-id="JYZiFIGBNkgtBB1zK9OSOd"><code data-page-node-id="BRPeusIZKEaQ01ion9ZFGx">2pa</code></td><td data-page-node-id="fAUa6uGNMmaKDwoNCYVypz">Al Brooks 价格行为学：八态市场周期 + 二元决策树（默认）</td></tr>
+  <tr data-page-node-id="trlj3Cfeji7u6mIKDv29is"><td data-page-node-id="7HQgv05nMTrPunmKB4h4Qc"><code data-page-node-id="SJoPZZBsvokKwNU3Mraec5">dog_walking</code></td><td data-page-node-id="Q3XWphMhk745m73XhhiZoe">"遛狗"均线回归：SMA14/170 通道</td></tr>
+  <tr data-page-node-id="Bih5X3X21Csl7U6G3KknFF"><td data-page-node-id="W6FQ0Q8uCQSWN3TKWaQVCb"><code data-page-node-id="eq543D14VVhJQnLwut7ng2">adaptive</code></td><td data-page-node-id="Hdy92g3Cgh1WmXpeWWVRJ7">双引擎自适应：自动在 2pa 与遛狗之间切换</td></tr>
+</table>
+
+<h2 id="config" data-page-node-id="wqRqcf5VlomZwTE5OL3mET">8. 配置参考（.env）</h2>
+<p data-page-node-id="fl4FB6Fc4FSGGfYw7t8Qsu">修改 <code data-page-node-id="wXDIqiNc24lMUzbbMcmJHO">.env</code> 后需重启服务（EXE：关掉窗口重新运行 bat；Docker：<code data-page-node-id="5FkWqUe8RJpzG7YP7yTkIL">docker compose restart</code>）。</p>
+<h3 data-page-node-id="7caFXlPrCC1iAQSh4VpEzX">LLM 相关</h3>
+<table data-page-node-id="WK1AKWy0k8kbHJKS2swPgM">
+  <tr data-page-node-id="oFWDp3eamTXkPATgzcr3Nb"><th data-page-node-id="0Dzpe4Q7PSseRueuMhZkuB">配置项</th><th data-page-node-id="xBmZKaMDYalPWNGjhfA0Ij">默认值</th><th data-page-node-id="LzFlJfCgrLHGHHWqkewQuB">说明</th></tr>
+  <tr data-page-node-id="CkLX4nTLSVlb7d9ZlaD2Ed"><td data-page-node-id="ExGFLeMc3GUqqY0qLAlRuk"><code data-page-node-id="lGp7wqJGghBQUYOh00rJkA">LLM_API_KEY</code></td><td data-page-node-id="LTRGKrjlwguBAsL5CBVNEH">空</td><td data-page-node-id="e6DfFkiQCaBStBRCMfrOH4">LLM 服务 API 密钥（必填）</td></tr>
+  <tr data-page-node-id="XJblDF5VsWDGurOHjpupFT"><td data-page-node-id="fFfM2oD8kCL2Lz2hGRLG8B"><code data-page-node-id="Jvq6wIU879gJBfYbI563Vy">LLM_BASE_URL</code></td><td data-page-node-id="UnXIuxKUDNDcYlBxUOOXkq"><code data-page-node-id="4oM0FVmi58XL7XMj9FK6Wb">https://api.deepseek.com</code></td><td data-page-node-id="BiZRevx1Cu1Ikq88o9wQ7W">OpenAI 兼容接口地址</td></tr>
+  <tr data-page-node-id="1I8oBk4ncPwjY2BzwVDtiq"><td data-page-node-id="VM8NCvG32FfRdIZpHDHGLs"><code data-page-node-id="zhBKFVR08duNRYkWB4hF2O">LLM_MODEL</code></td><td data-page-node-id="Y9F61oUF1Mp3zzA4lr6Jbo"><code data-page-node-id="KQxBaGkADL3MwY0qrxXmdH">deepseek-v4-flash</code></td><td data-page-node-id="d5LwvEGAl6a4M9A1b4BxTf">模型名</td></tr>
+  <tr data-page-node-id="BxDBhCNeQ4kVvFRvtVTnwf"><td data-page-node-id="a5XDMYYjLFCdtes2QFZUTW"><code data-page-node-id="aIFlPjOmiXmDPBT5ru4zvr">LLM_THINKING</code></td><td data-page-node-id="68FSJxYJbFDbMhzSLvREhJ"><code data-page-node-id="NrDg5KAGLcehI2eN33VCVB">false</code></td><td data-page-node-id="fENV7b0qjIgECyCvCG2cgY">是否启用思考模式（服务商支持且需要时可改 true）</td></tr>
+  <tr data-page-node-id="A6hf0fMAbACK4k1CRSXPqO"><td data-page-node-id="yFYIts44BRybKwWtSL9Pod"><code data-page-node-id="7vzyKVDepLo2Zi6FHHkOTq">LLM_REASONING_EFFORT</code></td><td data-page-node-id="Jnyxrm34IIxF0qzr0CnK16"><code data-page-node-id="0krbBZO5iOgodD8hk5ZkIz">high</code></td><td data-page-node-id="KosaF4Ypde4nSmftiJU5vx">思考强度：low / medium / high / max</td></tr>
+  <tr data-page-node-id="Jf2BhHmBvf6hbX8JMqr68c"><td data-page-node-id="wHmdr4YhZroDHLSth0GQaX"><code data-page-node-id="33AL4nA08Ci0POwdfZcE0A">LLM_CONTEXT_WINDOW</code></td><td data-page-node-id="CXPPbSChRVNgNhhQ0TKqjB"><code data-page-node-id="gsTk7uSwy15ypjDikn94Mz">128000</code></td><td data-page-node-id="CKVFZT0K3BhM5aoNSWNjFI">模型上下文窗口大小，不超过服务商限制</td></tr>
+  <tr data-page-node-id="NiE7vpghH0568kvV5oMQMq"><td data-page-node-id="tpLgGv5ngvTLbKSSeBYBW9"><code data-page-node-id="dxd6ensdTBYRlUIbDouJfU">LLM_STAGE_TIMEOUT_SECONDS</code></td><td data-page-node-id="rdaa4vEPGA62JfJcEOEL9g"><code data-page-node-id="lQ32itg2pp36Z6gZ9KAeM1">240</code></td><td data-page-node-id="NhwOwNEswkN5UEmJlMRS0G">阶段一 / 阶段二各自的最大等待秒数（30-1800）</td></tr>
+</table>
+<h3 data-page-node-id="5AQBkB3m9UATszGWlUJ6Bq">交易系统选择</h3>
+<table data-page-node-id="4X2XGZiaGATTt88hitucn4">
+  <tr data-page-node-id="Vm9HrBFkAwYdoFGDAeFzgy"><th data-page-node-id="6CCBvdNpfV6EwFIKMmS0GP">配置项</th><th data-page-node-id="bZAzDlh5wDtm1kRIp2PCUC">默认值</th><th data-page-node-id="1p6Pxn93v6Mwj0IAjb31AH">说明</th></tr>
+  <tr data-page-node-id="9KvQ0pwyoOLoDE3IvKl5k0"><td data-page-node-id="P6K0iLBjxwfd4tNdDz7qWJ"><code data-page-node-id="A7vBwPh6zSxBKz4uzjXfsp">TRADING_SYSTEM</code></td><td data-page-node-id="BV11PczI3E6arEPk7If7in"><code data-page-node-id="gdPfXny89nic0yi5YKuqUL">2pa</code></td><td data-page-node-id="eUI6WkF9eVmBOMRxkc8wsD"><code data-page-node-id="TCsf2CfWE12XtJq8Rv8ca8">2pa</code> / <code data-page-node-id="AAuHc3BygvIbNiwbq5dsLW">dog_walking</code> / <code data-page-node-id="4GDxxeyLeQ1dMRVXsgp6Ty">adaptive</code></td></tr>
+</table>
+<h3 data-page-node-id="Wmd63leYW2U8aP9Vrt6j8R">桥接与交易</h3>
+<table data-page-node-id="pfZJ0wAvr9CusIpzwf5p7H">
+  <tr data-page-node-id="1oIRTPCaSrbVgcBRzhIM2u"><th data-page-node-id="nK1Bj1GE9lVXSYVZ6kyUwV">配置项</th><th data-page-node-id="bW7VCi1ehMcUkCOTyeJFNR">默认值</th><th data-page-node-id="QFQSWcczzVsrS0IyKfE4Xg">说明</th></tr>
+  <tr data-page-node-id="DNjLGjfbsepfpkBuxIc4qW"><td data-page-node-id="0C9CVrYF9x05hjV7kxQvXz"><code data-page-node-id="porbmBFIBmjglNHl7P55BH">MT5_BRIDGE_TOKEN</code></td><td data-page-node-id="iezVkGUBL8utb2oJ5H0DAo">空</td><td data-page-node-id="gOwp2plB3Em9zjvVlmYTCR">桥接令牌，与 EA 的 BridgeToken 一致；Docker / 公网部署务必设置强随机值</td></tr>
+  <tr data-page-node-id="1K9QRrmAbH3m852YhFtsb1"><td data-page-node-id="PBa0TKF4OSSs4SJgj1cqxD"><code data-page-node-id="FpidnTWZnI1xfiZFFRNLjZ">MT5_MAGIC_NUMBER</code></td><td data-page-node-id="IY6j6hYLtrOy93aEmA2ERk"><code data-page-node-id="lWbt79MG5VLwRUpAYlhpYL">20260907</code></td><td data-page-node-id="7CVgCqfjchU4czKVAxKPAw">魔术号，须与 EA 一致；代理只管理自己魔术号的单</td></tr>
+  <tr data-page-node-id="4C5Lhs33AMYBfSBNK4qjCE"><td data-page-node-id="KsUPZacN6klqCXhb59hPKM"><code data-page-node-id="yf5qB021ANvtbar50B76CL">MT5_COMMAND_TIMEOUT_SECONDS</code></td><td data-page-node-id="V83W5Dv5SaIOuYRcCap78u"><code data-page-node-id="OMSTtleBC2P16Bqo5lkgwj">20</code></td><td data-page-node-id="khjnPwBtDA8VvQQ3SMUavE">等待 EA 回传执行结果的最长秒数</td></tr>
+  <tr data-page-node-id="00cI6fk9zFJn49dxJXlHEu"><td data-page-node-id="VuhjV9YVklco5IBPCOEXQJ"><code data-page-node-id="XZLZsWpZ7r0WOAA8jov5Qv">MT5_BRIDGE_STALE_SECONDS</code></td><td data-page-node-id="AvpH5ogUoAjyObdryRan8t"><code data-page-node-id="Sd5ksLrjF4sCmSh3NbVEuI">15</code></td><td data-page-node-id="lC7p6MgGaU9JCp3tHK5R6W">超过该秒数未收到 EA 同步视为桥接断开</td></tr>
+  <tr data-page-node-id="I37yfpDFZJ5DO52NDBDrHn"><td data-page-node-id="oLlmL2iLuby8OP0mVIx6YC"><code data-page-node-id="jwtmh9gXyWrpU9YBWHF4ZL">MT5_AUTO_TRADING_ENABLED</code></td><td data-page-node-id="HemOYAB19pjHUzDuigL8Ka"><code data-page-node-id="pdH4A4GUoL8ECHlJpi5scD">false</code></td><td data-page-node-id="2Z8mcA1cGAVoqKLhM6EVrg">自动交易总开关（启动时固定 false，需手动 ENABLE 确认开启）</td></tr>
+  <tr data-page-node-id="Ycpu1V055SogIEC4tUmAWj"><td data-page-node-id="mymenx38C9BJbboGWEHNUC"><code data-page-node-id="HhK5CXwYRlRNMH5hKyyKFe">MT5_LIVE_TRADING_ACKNOWLEDGED</code></td><td data-page-node-id="5yllMZ0c2FHK6GWif6u342"><code data-page-node-id="dz46RmUcdwVTv8hvEyVu3K">false</code></td><td data-page-node-id="n0DK2ssT7D2OUjySA32bZX">实盘风险确认；true 表示已知悉（实盘开启前需确认）</td></tr>
+</table>
+<h3 data-page-node-id="le3BrqTL8UMLhb3L7SyNJt">订单与风控</h3>
+<table data-page-node-id="xFwBAw7YFe6x3XfP7xT90X">
+  <tr data-page-node-id="kSUUBalWTi90OSkkp7uEGR"><th data-page-node-id="WHMfhsZyGiA2jFoXHwMmWC">配置项</th><th data-page-node-id="8oyWNHwjgHIuqr2PxTwdd0">默认值</th><th data-page-node-id="t4a7EcQXwfkEP6jZbK9g9z">说明</th></tr>
+  <tr data-page-node-id="ZNbfUt0sgl8f3YmctIMsrQ"><td data-page-node-id="7169Jxs1KrMOBJmUqA0IcR"><code data-page-node-id="wJfgRmnQIsHijqoiRNGUGN">MT5_DEFAULT_ORDER_SIZE</code></td><td data-page-node-id="cuLe55ouFCS03TIr38m268"><code data-page-node-id="lATS8olAOHmvnhSC8y4EjU">0.1</code></td><td data-page-node-id="13dzi4KxUG8ee54eknoHqJ">固定下单手数（自动算量关闭时生效），如黄金 0.1 手</td></tr>
+  <tr data-page-node-id="8JlowCQur2KQDBzS8uPz3B"><td data-page-node-id="3en7m6stP37cPBf7PDiIlx"><code data-page-node-id="lzTIfkHbDXU4qaR9z4hoTw">MT5_DEFAULT_LEVERAGE</code></td><td data-page-node-id="HQLalgiYm3j8Iu8jjVclEZ"><code data-page-node-id="8osyKIj6VCj3VQwWBPD3M5">100</code></td><td data-page-node-id="gzaV6iLFkj1W3GQym9MNh1">仅用于保证金估算；MT5 实际杠杆以终端账户设置为准</td></tr>
+  <tr data-page-node-id="yYqfrZ78ul4dqNcdFWk8wR"><td data-page-node-id="oEHMq1nmgOM28GzsSlJ89X"><code data-page-node-id="NiNhZqPMLv2h5XvgmRgBf9">MT5_AUTO_ORDER_SIZING</code></td><td data-page-node-id="gJuEflBrPHBKJs4hLZZUMc"><code data-page-node-id="7M0B0uLMVajQDqA2GfgxV0">true</code></td><td data-page-node-id="YQoModEr9I3dQ0p8TBwlCy">true=按账户净值 / 止损距离动态算量；false=使用固定手数</td></tr>
+  <tr data-page-node-id="gKkfpQN0YuvajKRv7iM5i8"><td data-page-node-id="cFMgYbQlCxTUuL4Lj4dslC"><code data-page-node-id="yDXSprtHgsr2mQT6FAH4Yc">MT5_RISK_PERCENT</code></td><td data-page-node-id="YiDQKD9oGM24ZmrQBkOQzu"><code data-page-node-id="0tDtiDGziDZZf6xWaZ5GL0">2</code></td><td data-page-node-id="ckSgTArz0r8U9M11HI7NnA">单笔风险占账户净值比例（%），范围 0.1-20</td></tr>
+  <tr data-page-node-id="97UmjSJuJErD5wwi3Vw9da"><td data-page-node-id="lt8iO5e3Z56J7ujiVBWKEv"><code data-page-node-id="WTNEJVpmjKkRBnZaXUnDST">MT5_MAX_MARGIN_PERCENT</code></td><td data-page-node-id="QOQLIRjPy5VXyQeCaTU6Tr"><code data-page-node-id="puhKDNkBTvQmAeQcTIwGJX">25</code></td><td data-page-node-id="V384Kar5nT8ofgURr7vZAk">单笔最大占用可用保证金比例（%），范围 1-100</td></tr>
+  <tr data-page-node-id="153raaGlflTRbuQLdMUcHJ"><td data-page-node-id="bxCz5TBGupD1IH4B8puvKl"><code data-page-node-id="IaaJJa4fosdhZJkpRmn9br">MT5_BLOCK_NEW_ENTRIES_WHEN_POSITION_OPEN</code></td><td data-page-node-id="0Se9T8RPl4AE5Knu1UuQA3"><code data-page-node-id="KrT7J7TeF5iqiTYuoklDbj">true</code></td><td data-page-node-id="z6IeC0JNzqxrFLmxu96yxF">已有持仓时禁止同品种继续开仓</td></tr>
+  <tr data-page-node-id="RxGX649SyVRJkoUPZa1MM8"><td data-page-node-id="iFTNoHReDYDwVO0BcA4Ug8"><code data-page-node-id="AE2vYtO41JANriwRl57Il7">MT5_MAX_SIGNAL_AGE_SECONDS</code></td><td data-page-node-id="7kDaX6cxhMH0tujZcRgTM3"><code data-page-node-id="5FK6Ky8jmJtLEWmeKZrTee">120</code></td><td data-page-node-id="VPeQIHxMypa3I6RWCZKvjN">信号超过该秒数（从已收盘 K 线收盘时间计算）后不执行</td></tr>
+  <tr data-page-node-id="mY4PphqquLAF8BdmYs9oH6"><td data-page-node-id="SRfLTCAN3v8sLzzXGLBh9P"><code data-page-node-id="ChHFsiMQysYshgIWw58vgR">MT5_MAX_PENDING_BARS</code></td><td data-page-node-id="e0gXr79krocdRML6Fj38X4"><code data-page-node-id="0gspfTXHd2wFPAsBFGH9Aj">3</code></td><td data-page-node-id="0x2YzteJDuw52OaOyCRzUJ">未成交开仓挂单超过该数量的已收盘 K 线后自动撤销</td></tr>
+  <tr data-page-node-id="lA8CAUFcHlNdGj2fJqwVAL"><td data-page-node-id="qJyu7cZXQheyzpfXtA28H3"><code data-page-node-id="byXW1A0XWKU1tuqQe0why4">MT5_AUTOMATION_POLL_SECONDS</code></td><td data-page-node-id="fFmGupOaaFvVcIL6dqUqbH"><code data-page-node-id="9FibCmqP8txCugUsRh5KPB">20</code></td><td data-page-node-id="FcCmsl1Sfb6KhsXBvkyspo">自动交易轮询间隔（不代表固定下单频率）</td></tr>
+</table>
+<h3 data-page-node-id="W1ZlXd9uaYC3wh99r4e4De">交易时段</h3>
+<table data-page-node-id="r9SNo5BEGmUK0kMg9JRpZg">
+  <tr data-page-node-id="d4jfoMWy4ZI4bs1zyIdYhr"><th data-page-node-id="sjbUbAqAeTKoM4k8Kg9V5C">配置项</th><th data-page-node-id="k3GH21JFYvxqmYfAEsvflk">默认值</th><th data-page-node-id="UgRNRXaSz1RrLSeJyLFJn2">说明</th></tr>
+  <tr data-page-node-id="IzEtXcsbY7Rq5xAYob1ziH"><td data-page-node-id="EhuRIK1NxHIKTxTrcgFOjW"><code data-page-node-id="pDyhi5xq4OPcgGmXr9rt7a">MT5_AUTOMATION_SESSION_PRESET</code></td><td data-page-node-id="gLyIFclE3pUmFaxSH2INDS"><code data-page-node-id="olCbj9SJad2aNH8eGfhETa">always</code></td><td data-page-node-id="qxauwHP2bg5CCuk04wupSX">时段预设：always / us_regular / us_open / london / asia / custom</td></tr>
+  <tr data-page-node-id="UyjseN2zwAmjFAFdqru7S8"><td data-page-node-id="ZhQ8LyjxNssqmCCMJIugFL"><code data-page-node-id="JsSPcGo15dhvS4WaaYoNHU">MT5_AUTOMATION_SESSION_TIMEZONE</code></td><td data-page-node-id="mxmOXk8f5zEpXdc8zHKIoN"><code data-page-node-id="WJAaqnfzboisi1QeQsDefx">Asia/Shanghai</code></td><td data-page-node-id="Z8uRDCIzea26YOA9ie4AtK">custom 模式使用的 IANA 时区</td></tr>
+  <tr data-page-node-id="Ju59Vb7RogxwjtmYrvoEGI"><td data-page-node-id="TRuimqcMfmNB83FfRzlV9M"><code data-page-node-id="8WkYOV17HhTOA6bWTzh875">MT5_AUTOMATION_SESSION_START</code></td><td data-page-node-id="AQEjoGBGKGJEPAnTZpBgPs"><code data-page-node-id="aE1zUws2pwgsgTbErVbdhR">09:00</code></td><td data-page-node-id="lhWH4QiSO4at7w3dbfQ5EN">custom 模式开始时间（HH:MM）</td></tr>
+  <tr data-page-node-id="S0P9QIAifm2xSnTFXKT8Fs"><td data-page-node-id="klGAQHOnL0vxBCjoFIXcPD"><code data-page-node-id="MWkd8tUm2JFGBH6zMroXCF">MT5_AUTOMATION_SESSION_END</code></td><td data-page-node-id="LJ4nFHoBv2jQcfxqQOFqyE"><code data-page-node-id="3nVxHG1UYEaDoDfCmA0dq5">16:00</code></td><td data-page-node-id="3DksKAJ20gfE4E47auWH3u">custom 模式结束时间（HH:MM）</td></tr>
+  <tr data-page-node-id="93wowkyAnC0C9FIcPnTHGN"><td data-page-node-id="NvjrOKaFqerXePFdTjAQ4W"><code data-page-node-id="lIn3sivRFum2fRXZhRTLuH">MT5_AUTOMATION_SESSION_WEEKDAYS</code></td><td data-page-node-id="bJbKCE4nH6c09EdYvSjqTX"><code data-page-node-id="XR1InelGO5Vst4ujssaGqQ">0,1,2,3,4</code></td><td data-page-node-id="Z3d8XBgfjz2JanLIBPE87i">custom 模式星期（周一=0，周日=6）</td></tr>
+</table>
+
+<h3>Web 控制台账号</h3>
+<table>
+  <tr><th>配置项</th><th>默认值</th><th>说明</th></tr>
+  <tr><td><code>WEB_ADMIN_USERNAME</code></td><td><code>admin</code></td><td>内置管理员账号名（仅 config/users.json 不存在时创建）</td></tr>
+  <tr><td><code>WEB_ADMIN_PASSWORD</code></td><td><code>admin123</code></td><td>内置管理员密码，<b>务必修改</b></td></tr>
+  <tr><td><code>WEB_VIEWER_USERNAME</code></td><td><code>viewer</code></td><td>内置只读账号名</td></tr>
+  <tr><td><code>WEB_VIEWER_PASSWORD</code></td><td><code>viewer123</code></td><td>内置只读密码，<b>务必修改</b></td></tr>
+</table>
+<p>内置账号仅在首次启动（<code>config/users.json</code> 不存在）时创建；之后一律通过控制台「用户管理」维护，修改这些环境变量不再影响已有账号。</p>
+
+<h2 id="logs" data-page-node-id="kNJw88Lh78CXXpnxtL5xfs">9. 日志与审计</h2>
+<p data-page-node-id="gLHgYR9mJc67l4A7BA89uY"><b data-page-node-id="57SYBApgtL7XWsOFQ64Ceo">代理端日志</b>（EXE 版为控制台窗口；Docker 版 <code data-page-node-id="FbJ5v2IPqmGsrpbQAgNJR2">docker compose logs -f</code>）：</p>
+<ul data-page-node-id="DQErNkpOcwa4KDoQS1SHde">
+  <li data-page-node-id="NuYkGFZCjnXRdgi9nEiFUg"><code data-page-node-id="0ZNL2nIZm39CopzRirf2f0">[决策执行] AI 决策推送下单: ...</code> — AI 决策的完整下单参数（标的 / 类型 / 方向 / 手数 / 价格 / SL / TP）</li>
+  <li data-page-node-id="srU80tWPM0Zp5796r67IeG"><code data-page-node-id="2kzESfMNIS6yvCcm4nSZyb">[决策执行] Cancel-Replace 撤销旧挂单: #票据 ...</code> — 新单前自动撤旧挂单</li>
+  <li data-page-node-id="Zmued2FA792nFDV0JvHJ6c"><code data-page-node-id="sTN4o5TfAoqLUdvfWORqs6">[桥接] 指令已入队待 EA 领取 / EA 本次同步领取 N 条指令</code> — 指令下发过程</li>
+  <li data-page-node-id="cEBULvhV2U9V4urAp16UG3"><code data-page-node-id="DijWCDoJHS0oEX5Sths9kL">[桥接] EA 执行成功 / 失败: id=... 回执=票据</code> — EA 执行结果</li>
+  <li data-page-node-id="d2yex9ZcKm0Z3GeOLDB6sn">审计文件 <code data-page-node-id="5XgyRYosAX7Nf0uGxrklG2">records/trade_audit.jsonl</code> — 每笔交易决策的完整 JSON 审计记录</li>
+</ul>
+<p data-page-node-id="Bs8iYO2xm7RBCJFI3Bl0cU"><b data-page-node-id="mpZIKOY1RxxLVKjiY6T2VH">EA 端日志</b>：MT5"工具箱 → 专家"标签页；打开 EA 参数 <code data-page-node-id="n4OePubNnIMdymHHB5lEcS">VerboseLog=true</code> 可看执行细节（指令接收、下单 retcode 等）。</p>
+
+<h2 id="faq" data-page-node-id="hkKLXAbgtwERQZBNNsHE8c">10. 常见问题（FAQ）</h2>
+<h4 data-page-node-id="AxSXK1gA0xMeGEhGcwU7nw">Q1：桥接状态一直显示未连接？</h4>
+<p data-page-node-id="StpQfvKb7xYchFncNIGGXk">依次检查：① EA 是否已挂载到图表并允许算法交易；② WebRequest 白名单是否已添加代理地址（注意不带 <code data-page-node-id="o6rrG1fi7Vnp4s8DIVS5Wz">/bridge/sync</code> 路径）；③ <code data-page-node-id="JTtFVIVLtrXhIRxnNyaTxj">BridgeUrl</code> / <code data-page-node-id="qgxK7E14TtYEaAf5tXltdS">BridgeToken</code> 是否与代理配置一致；④ EA 与代理网络是否互通（Docker 版用 <code data-page-node-id="I4T7xPGvfBu7EdrAua6Qtp">telnet 代理IP 8066</code> 测试）。</p>
+<h4 data-page-node-id="G8xNVKVT8Vi5iKWsQvztkw">Q2：提示"等待 MT5 推送 XX K 线超时"？</h4>
+<p data-page-node-id="gF2Dr0hhGBXKpoXf8cS7H4">该品种 / 周期在当前账户不可用，或 EA 尚未完成首次订阅（约几秒）。若持续超时，打开 EA 的 <code data-page-node-id="HmnYD9Dnvvk36b3qMX05GM">VerboseLog</code> 查看 CopyRates 是否失败。</p>
+<h4 data-page-node-id="FkznhXD7RYdkEuIMF0WdTw">Q3：交易记录显示"MT5 执行失败"？</h4>
+<p data-page-node-id="hBLezLBjUPDsvfSzoLgP2n">看代理日志中 <code data-page-node-id="QZxAJHL7Z9l7GIR42iQcdV">[桥接] EA 执行失败</code> 一行的具体原因，以及 EA 端"专家"日志里的 retcode（如 10015 无效价格、10019 无足够资金）。</p>
+<h4 data-page-node-id="9hXcTLeJWAQjQFgKM9El7o">Q4：AI 决策了限价单但长期不成交？</h4>
+<p data-page-node-id="BIaUWFBsrvbVuOzfwLCLPR">挂单为 GTC（直到取消）型。正常情况下，后续新决策会自动撤旧挂新（Cancel-Replace）；若 AI 转为观望，旧挂单会保留，可在控制台"账户"页手动撤单（只撤本代理魔术号的单，不影响手工单）。</p>
+<h4 data-page-node-id="mFh6CI0BpvOw0EIpoHNQg6">Q5：Exness 之类后缀品种怎么填？</h4>
+<p data-page-node-id="LmHb0OARCf6AEXRNvGtBoX">直接填基础名（如 <code data-page-node-id="7kD6DDhTHOVXMbzWfFw34i">XAUUSD</code>）即可，代理会自动匹配 EA 上报的规范名（<code data-page-node-id="zJFcKXtUwvwIBItCuSMYs3">XAUUSDm</code>）；填规范名也可以。</p>
+<h4 data-page-node-id="abKKXYEIA19bmdaOYayzPX">Q6：如何从模拟盘切到实盘？</h4>
+<p data-page-node-id="YljQGAewyvvTBF4Tjqlve4">EA 随 MT5 账户自动识别，无需改配置；实盘首次开启自动交易需在控制台确认，且 <code data-page-node-id="dlTufi8rYT7XjesBfEkLDL">.env</code> 设 <code data-page-node-id="g0dXFMhYyywlEJmzFBpEuo">MT5_LIVE_TRADING_ACKNOWLEDGED=true</code>。</p>
+<h4 data-page-node-id="COJcwFFtmsxe4wSWHgYCmw">Q7：端口想改？</h4>
+<p data-page-node-id="Rbv954CmWZ9FOXqSZnvVvo">EXE 版编辑 <code data-page-node-id="al7w1Cw79kxnJUo5dJGvFe">启动服务.bat</code> 中的 <code data-page-node-id="gERghQdCSMEcucrMOLNQ10">--port</code> 参数；Docker 版修改 <code data-page-node-id="dEo3xHNSrNnGcesq8Cz6zr">docker-compose.yml</code> 的端口映射。改端口后记得同步更新 WebRequest 白名单和 EA 的 BridgeUrl。</p>
+<h4 data-page-node-id="Eps1GMJkcuyun1RKO065va">Q8：EA 放进去后 MT5 里看不到 / 无法挂载？</h4>
+<p data-page-node-id="1LcQGD630P3qhdz0ScCWo8">确认 <code data-page-node-id="DaxrmqlqX9Lfv5OMGEzHMb">PABridge.ex5</code> 放在 <code data-page-node-id="qTtOMaDFmD2BzxcF4THpDm">MQL5\Experts\</code> 目录下（不是 Indicators 或 Scripts）。放入后需在"导航器"面板右键"刷新"，或在"文件 → 打开数据文件夹"确认路径正确。</p>
+
+<h2 id="risk" data-page-node-id="FEHBIqNQP5gEDATqauYbVY">11. 安全与风险提示</h2>
+<ul data-page-node-id="k79u0pHl835m3LM1GLt8ma">
+  <li data-page-node-id="CY3sDAhVUViv39pjcBIAEt"><b data-page-node-id="VBiYFp2OzvtMFbYYTfeldJ">先用模拟盘</b>：请务必在模拟账户上完整验证策略与配置后，再考虑接入实盘。</li>
+  <li data-page-node-id="jBWrtw6SHroFV4jB6qs2gp"><b data-page-node-id="oMApqn1Z8Ih4VnXb0P2JWk">AI 决策不构成投资建议</b>：大模型输出具有不确定性，自动交易存在亏损风险，请自行承担投资决策责任。</li>
+  <li data-page-node-id="S3NSUqB4XKvq4NOBqq9XLZ"><b data-page-node-id="PrfocM0wlmzDznHx66mxu2">令牌保护</b>：<code data-page-node-id="qgqMGBJz5V3fAPDfjInglw">MT5_BRIDGE_TOKEN</code> 是桥接的唯一凭证，切勿泄露；公网部署必须配置强随机令牌并限制来源 IP。</li>
+  <li data-page-node-id="gBSZy87hBchwqnv9QfPH0z"><b data-page-node-id="sFo48YHEYz4cdvsyHJbHTQ">密钥安全</b>：<code data-page-node-id="jxibJE8jhDpdoiAGNybVDC">.env</code> 含 API 密钥，请妥善保管文件权限（Docker 版已设 600）。</li>
+  <li data-page-node-id="sTdRcUIh9jYqwznxrCCFr3"><b data-page-node-id="D0EIElUpBi8OBlyHeTFfKE">最小权限</b>：代理只操作与自己魔术号匹配的持仓 / 挂单，不会触碰你在 MT5 中手工下的单。</li>
+</ul>
+
+<h2 id="rel" data-page-node-id="4sxUT2IF1OJi0ukCDVPym7">12. 发行包说明</h2>
+<div class="grid" data-page-node-id="LYWBE9538hC5tGYWxqKYE1">
+  <div class="card" data-page-node-id="CuTJYnVbJOcZiGQVKJPNck">
+    <h4 style="margin-top:0" data-page-node-id="hZ2odqZJOUmmjFTf2kEQGj">📦 EXE 版（Windows）</h4>
+    <p data-page-node-id="6QtOZKtCUlCBMWAN4Oom28"><code data-page-node-id="WE8npx2f5EnNoVb2JDfvX3">mt5-2pa-agent-v0.4.4-20260911-1145-win64.zip</code></p>
+    <ul data-page-node-id="X7EsDByxbz2GFlIQrkLjce">
+      <li data-page-node-id="vXp1WgzbuUujSis0xP91Wh">已编译 <code data-page-node-id="XWAJCH8VbPEW5yVIDpojWd">mt5-2pa-agent.exe</code>，解压即用，无需 Rust 环境</li>
+      <li data-page-node-id="b4nHzbScIYGUB73lJwpbff">含 <code data-page-node-id="grlHXlHpcZOqphW6sj8W6t">PABridge.ex5</code>（EA，已编译）</li>
+      <li data-page-node-id="qDsoyjLZLK1I028vTVdpyR">含 <code data-page-node-id="zKrVXg6v6CFtVCUtbq0eI4">启动服务.bat</code> / <code data-page-node-id="ZZc3f0frj5lQyMTvOh5r2s">免费AI注册.txt</code> / <code data-page-node-id="UpGr01Txt9NoTe0001">升级说明.txt</code></li>
+      <li data-page-node-id="zBeFN8CzNylSkYK9SB1u8Q">含 <code data-page-node-id="13i0C2WTzSxDAgezvXblh0">experience/</code>、<code data-page-node-id="qaN6AFFmZKiz1JxVPQ0BIx">prompt_engineering/</code>、<code data-page-node-id="bic8rS8ikUSa75CFejAMi2">config/</code>、<code data-page-node-id="ybbhzg5oE8l5p4iGaGjcYl">docs/</code></li>
+    </ul>
+  </div>
+  <div class="card" data-page-node-id="q7HGiJFTEZQVCT43Q47kIi">
+    <h4 style="margin-top:0" data-page-node-id="zHA1G14a1aBQkgdfhHJW6a">🐳 Docker 版（Linux / NAS）</h4>
+    <p data-page-node-id="K6HSTBaG2HDqTWi9XfTC17"><code data-page-node-id="OVXhXtIjaja5yT3DbuPIHe">mt5-2pa-agent-v0.4.4-20260911-1145-docker.tar.gz</code></p>
+    <ul data-page-node-id="yWv4O4Zs47jqRHYs2oibbK">
+      <li data-page-node-id="oJJMVw9kYRdrnbBAtxUV2k">完整源码，容器内完成 Rust 编译</li>
+      <li data-page-node-id="gPWWlfNsNSWApGX75iKqJA">含 <code data-page-node-id="zc4ifLgiu8geLQhWJ11EbX">PABridge.ex5</code>（EA，已编译）</li>
+      <li data-page-node-id="f6Ddv2PjYFuQG2lC0rFzeY">含 <code data-page-node-id="ngSuAwxP0FzJeDdTOU7eHl">Dockerfile</code> / <code data-page-node-id="KBuXF3tVfyEmTm9QNiiqki">docker-compose.yml</code> / <code data-page-node-id="fuKZKynwSd7zJZrBdJJYBf">.env.example</code></li>
+      <li data-page-node-id="Eunr89hQBR6VofAgusAHQp">含 <code data-page-node-id="vF4RSnnFsOrWl8TM13mo4V">docs/DOCKER部署指南.md</code> 与 <code data-page-node-id="WiV0h3eFGGDcr2B3Vagv4y">docs/用户手册.html</code></li>
+      <li data-page-node-id="UpGr01Txt9NoTe0002">含 <code data-page-node-id="UpGr01Txt9NoTe0003">升级说明.txt</code>（旧版本用户升级步骤）</li>
+    </ul>
+  </div>
+</div>
+<div class="note" data-page-node-id="b1Jx7mXK3txdctD4zmmYoD">两版发行包均<b data-page-node-id="gmog7ewS2wuJP2sH9FWF2m">不附带 EA 源码（.mq5）</b>，仅提供已编译的 <code data-page-node-id="GrNU3P4gFpLM8Z0ikgg305">PABridge.ex5</code>，便于用户直接部署、也避免源码泄露。</div>
+
+<footer data-page-node-id="Q2tNeRm0jjj7scRla9WDMx">
+  MT5 2PA Agent v0.4.4 ｜ 基于 <a href="https://github.com/oficcejo/2pa-agent-rust" target="_blank" rel="noopener" data-page-node-id="YitMh0SyfcjXbDX6R4S4HE">2pa-agent-rust</a>（OKX 版）移植，遵循其 AGPL-3.0-or-later 许可证。<br data-page-node-id="HQ70eW4c8r8T1xZ5AnL3ls"/>
+  本软件仅供量化策略研究与价格行为学教学交流，不构成投资建议。外汇 / 贵金属 / 衍生品交易风险极高，可能导致本金全部损失。
+</footer>
+</main>
+</div>
+</body>
+</html>

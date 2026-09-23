@@ -1,0 +1,296 @@
+use crate::web::service::WebTradingService;
+use crate::web::static_files::{get_static_asset, render_index};
+use axum::body::Bytes;
+use axum::extract::{Path as AxumPath, Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{Html, IntoResponse, Json, Response};
+use serde::Deserialize;
+use serde_json::Value;
+use std::sync::Arc;
+
+pub type AppState = Arc<WebTradingService>;
+
+#[derive(Debug, Deserialize)]
+pub struct InstrumentsQuery {
+    #[serde(default = "default_inst_type")]
+    pub inst_type: String,
+}
+fn default_inst_type() -> String { "ALL".to_string() }
+
+#[derive(Debug, Deserialize)]
+pub struct CandlesQuery {
+    #[serde(default = "default_inst_id")]
+    pub inst_id: String,
+    #[serde(default = "default_timeframe")]
+    pub timeframe: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+fn default_inst_id() -> String { "XAUUSD".to_string() }
+fn default_timeframe() -> String { "15m".to_string() }
+fn default_limit() -> usize { 120 }
+
+#[derive(Debug, Deserialize)]
+pub struct LimitQuery {
+    #[serde(default = "default_limit_50")]
+    pub limit: usize,
+}
+fn default_limit_50() -> usize { 50 }
+
+#[derive(Debug, Deserialize)]
+pub struct AnalyzeRequest {
+    #[serde(default = "default_inst_id")]
+    pub inst_id: String,
+    #[serde(default = "default_timeframe")]
+    pub timeframe: String,
+    #[serde(default = "default_bar_count")]
+    pub bar_count: usize,
+    #[serde(default)]
+    pub execute: bool,
+    pub trading_system: Option<String>,
+}
+fn default_bar_count() -> usize { 100 }
+
+#[derive(Debug, Deserialize)]
+pub struct AutomationRequest {
+    pub enabled: bool,
+    #[serde(default = "default_inst_id")]
+    pub inst_id: String,
+    #[serde(default = "default_timeframe")]
+    pub timeframe: String,
+    #[serde(default)]
+    pub confirmation: String,
+    pub session_preset: Option<String>,
+    pub session_timezone: Option<String>,
+    pub session_start: Option<String>,
+    pub session_end: Option<String>,
+    pub session_weekdays: Option<Vec<u32>>,
+    pub trading_system: Option<String>,
+}
+
+pub async fn handle_index() -> Html<String> {
+    render_index()
+}
+
+pub async fn handle_static(AxumPath(path): AxumPath<String>) -> Response {
+    get_static_asset(&path)
+}
+
+pub async fn handle_status(State(service): State<AppState>) -> Response {
+    Json(service.status()).into_response()
+}
+
+pub async fn handle_instruments(
+    State(service): State<AppState>,
+    Query(_query): Query<InstrumentsQuery>,
+) -> Response {
+    match service.instruments("ALL").await {
+        Ok(data) => Json(serde_json::to_value(data).unwrap_or(Value::Array(Vec::new()))).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    }
+}
+
+pub async fn handle_candles(
+    State(service): State<AppState>,
+    Query(query): Query<CandlesQuery>,
+) -> Response {
+    match service.candles(&query.inst_id, &query.timeframe, query.limit).await {
+        Ok(data) => Json(serde_json::to_value(data).unwrap_or(Value::Array(Vec::new()))).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    }
+}
+
+pub async fn handle_account(
+    State(service): State<AppState>,
+) -> Response {
+    match service.account().await {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    }
+}
+
+pub async fn handle_get_decision_history(
+    State(service): State<AppState>,
+    Query(query): Query<LimitQuery>,
+) -> Response {
+    let records = service.decision_records(query.limit);
+    Json(Value::Array(records)).into_response()
+}
+
+pub async fn handle_delete_decision_history(
+    State(service): State<AppState>,
+    AxumPath(record_id): AxumPath<String>,
+) -> Response {
+    if service.delete_decision_record(&record_id) {
+        Json(serde_json::json!({ "deleted": true })).into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+pub async fn handle_get_trade_history(
+    State(service): State<AppState>,
+    Query(query): Query<LimitQuery>,
+) -> Response {
+    let records = service.trade_records(query.limit);
+    Json(serde_json::to_value(records).unwrap_or(Value::Array(Vec::new()))).into_response()
+}
+
+pub async fn handle_delete_trade_history(
+    State(service): State<AppState>,
+    AxumPath(record_id): AxumPath<String>,
+) -> Response {
+    if service.delete_trade_record(&record_id) {
+        Json(serde_json::json!({ "deleted": true })).into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+pub async fn handle_analyze(
+    State(service): State<AppState>,
+    Json(req): Json<AnalyzeRequest>,
+) -> Response {
+    match service.analyze(&req.inst_id, &req.timeframe, req.bar_count, req.execute, req.trading_system.as_deref()).await {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+pub async fn handle_automation(
+    State(service): State<AppState>,
+    Json(req): Json<AutomationRequest>,
+) -> Response {
+    match service.set_automation(
+        req.enabled,
+        &req.inst_id,
+        &req.timeframe,
+        &req.confirmation,
+        req.session_preset.as_deref(),
+        req.session_timezone.as_deref(),
+        req.session_start.as_deref(),
+        req.session_end.as_deref(),
+        req.session_weekdays.as_deref(),
+        req.trading_system.as_deref(),
+    ) {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+pub async fn handle_get_config(
+    State(service): State<AppState>,
+) -> Response {
+    Json(service.get_config()).into_response()
+}
+
+pub async fn handle_save_config(
+    State(service): State<AppState>,
+    Json(req): Json<crate::web::service::SaveEnvRequest>,
+) -> Response {
+    match service.save_env_config(&req) {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ContractSpecsQuery {
+    pub symbol: Option<String>,
+}
+
+pub async fn handle_contract_specs(
+    State(service): State<AppState>,
+    Query(query): Query<ContractSpecsQuery>,
+) -> Response {
+    match service.get_contract_specs(query.symbol.as_deref()).await {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetTradingSystemRequest {
+    pub trading_system: String,
+}
+
+pub async fn handle_set_trading_system(
+    State(service): State<AppState>,
+    Json(req): Json<SetTradingSystemRequest>,
+) -> Response {
+    let clean = req.trading_system.trim();
+    if !clean.is_empty() {
+        *service.current_trading_system.write() = clean.to_string();
+    }
+    Json(service.status()).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CancelOrderRequest {
+    pub inst_id: String,
+    pub ticket: Option<i64>,
+    pub ord_id: Option<String>,
+    pub cl_ord_id: Option<String>,
+    pub algo_id: Option<String>,
+}
+
+pub async fn handle_cancel_order(
+    State(service): State<AppState>,
+    Json(req): Json<CancelOrderRequest>,
+) -> Response {
+    let ticket = req.ticket
+        .or_else(|| req.ord_id.as_deref().and_then(|s| s.parse().ok()))
+        .or_else(|| req.algo_id.as_deref().and_then(|s| s.parse().ok()))
+        .unwrap_or(0);
+    if ticket <= 0 {
+        return (StatusCode::BAD_REQUEST, "需要有效的 ticket 号").into_response();
+    }
+    match service.cancel_order(&req.inst_id, ticket).await {
+        Ok(data) => Json(data).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CancelAllOrdersRequest {
+    pub inst_id: Option<String>,
+}
+
+pub async fn handle_cancel_all_orders(
+    State(service): State<AppState>,
+    Json(req): Json<CancelAllOrdersRequest>,
+) -> Response {
+    match service.cancel_all_orders(req.inst_id.as_deref()).await {
+        Ok(count) => Json(serde_json::json!({ "cancelled_count": count })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+/// PABridge EA 轮询端点：请求体为 T2A v1 文本协议，响应为 A2T v1 指令集。
+pub async fn handle_bridge_sync(
+    State(service): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let body_str = String::from_utf8_lossy(&body).to_string();
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let bridge = service.b();
+    match bridge.handle_sync(auth_header.as_deref(), &body_str) {
+        Ok(a2t) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            a2t,
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            format!("ERR {}\n", e),
+        )
+            .into_response(),
+    }
+}
